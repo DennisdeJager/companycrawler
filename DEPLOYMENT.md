@@ -7,6 +7,24 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
+```codex-deploy
+{
+  "targets": {
+    "dev": {
+      "host": "192.168.10.12",
+      "user": "capps",
+      "remotePath": "/opt/capps/apps/companycrawler",
+      "composeFile": "docker-compose.yml",
+      "services": ["db", "api", "worker", "frontend"],
+      "postDeployWaitSeconds": 25,
+      "healthUrls": ["http://192.168.10.12:8080/api/health"],
+      "readyUrls": ["http://192.168.10.12:8080/mcp"],
+      "postDeployChecks": []
+    }
+  }
+}
+```
+
 Services:
 
 - `api`: FastAPI op poort `8000`
@@ -36,4 +54,3 @@ Na elke code change:
 2. Commit en push naar GitHub.
 3. Dev container opnieuw deployen.
 4. Caddy reloaden indien mapping is gewijzigd.
-
