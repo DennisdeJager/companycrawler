@@ -12,7 +12,6 @@
 
 ## Rollen
 
-- `admin`: beheert gebruikers, AI-modellen, websites en scans.
+- `admin`: beheert gebruikers, websites en scans.
 - `user`: gebruikt websites, scans en zoekfuncties.
 - `guest`: ziet alleen een wacht-op-goedkeuring melding.
-

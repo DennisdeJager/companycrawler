@@ -152,6 +152,21 @@ class UserRead(BaseModel):
     created_at: datetime
     last_login_at: datetime | None
 
+
+class UserCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    name: str = Field(default="", max_length=255)
+    role: str = "guest"
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    email: str | None = Field(default=None, min_length=3, max_length=320)
+    name: str | None = Field(default=None, max_length=255)
+    role: str | None = None
+    is_active: bool | None = None
+
+
 class GoogleLoginRequest(BaseModel):
     credential: str
 

@@ -34,11 +34,12 @@ import {
   Users,
   X
 } from 'lucide-react'
+import smawaLogoSymbol from './assets/smawa-logo-symbol.png'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
 
-type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
+type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'Users' | 'Settings'
 type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts'
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
@@ -49,7 +50,6 @@ const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
   { label: 'Analyse', icon: ClipboardList },
   { label: 'API Docs', icon: BookOpen },
   { label: 'MCP Server', icon: Cable },
-  { label: 'AI Models', icon: Sparkles },
   { label: 'Users', icon: Users },
   { label: 'Settings', icon: Settings }
 ]
@@ -57,6 +57,7 @@ const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
 const buildCommit = import.meta.env.VITE_COMMIT_ID ?? 'dev'
 const buildTimeIso = import.meta.env.VITE_BUILD_TIME_ISO ?? ''
 const selectedWebsiteStoragePrefix = 'companycrawler-selected-website'
+const supportedEmbeddingModels = new Set(['text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002'])
 
 const emptySettings: ProviderSettings = {
   openai_configured: false,
@@ -100,6 +101,12 @@ function App() {
   const [formLogoUrl, setFormLogoUrl] = useState('')
   const [editWebsiteId, setEditWebsiteId] = useState<number | null>(null)
   const [websiteDialogMode, setWebsiteDialogMode] = useState<'create' | 'edit' | null>(null)
+  const [editUserId, setEditUserId] = useState<number | null>(null)
+  const [userDialogMode, setUserDialogMode] = useState<'create' | 'edit' | null>(null)
+  const [userFormEmail, setUserFormEmail] = useState('')
+  const [userFormName, setUserFormName] = useState('')
+  const [userFormRole, setUserFormRole] = useState('user')
+  const [userFormActive, setUserFormActive] = useState(true)
   const [message, setMessage] = useState('Klaar om een website te scannen.')
   const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('companycrawler-theme') === 'dark' ? 'dark' : 'light')
 
@@ -331,6 +338,51 @@ function App() {
     }
   }
 
+  function openNewUserDialog() {
+    setEditUserId(null)
+    setUserFormEmail('')
+    setUserFormName('')
+    setUserFormRole('user')
+    setUserFormActive(true)
+    setUserDialogMode('create')
+  }
+
+  function openEditUserDialog(item: User) {
+    setEditUserId(item.id)
+    setUserFormEmail(item.email)
+    setUserFormName(item.name ?? '')
+    setUserFormRole(item.role)
+    setUserFormActive(item.is_active)
+    setUserDialogMode('edit')
+  }
+
+  function closeUserDialog() {
+    setUserDialogMode(null)
+    setEditUserId(null)
+  }
+
+  async function saveUser() {
+    const payload = { email: userFormEmail, name: userFormName, role: userFormRole, is_active: userFormActive }
+    if (editUserId) {
+      const updated = await api.updateUser(editUserId, payload)
+      setUsers((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
+      closeUserDialog()
+      setMessage('User bijgewerkt.')
+      return
+    }
+    const created = await api.createUser(payload)
+    setUsers((rows) => [...rows, created])
+    closeUserDialog()
+    setMessage('User aangemaakt.')
+  }
+
+  async function deleteUser(item: User) {
+    if (!window.confirm(`${item.email} verwijderen?`)) return
+    await api.deleteUser(item.id)
+    setUsers((rows) => rows.filter((userItem) => userItem.id !== item.id))
+    setMessage('User verwijderd.')
+  }
+
   async function startAnalysis() {
     if (!selectedWebsite) return
     setMessage('Analyse-agent jobs worden uitgevoerd...')
@@ -421,8 +473,7 @@ function App() {
           <div className="topbar-title">
             {selectedWebsite?.logo_url && <img className="company-logo" src={selectedWebsite.logo_url} alt={`${selectedWebsite.company_name} logo`} />}
             <div>
-            <h1>{view}</h1>
-            <p>{selectedWebsite ? `${selectedWebsite.company_name} · ${selectedWebsite.url}` : 'Geen actieve website geselecteerd.'}</p>
+              <h1>{selectedWebsite ? `${selectedWebsite.company_name} - ${selectedWebsite.url}` : 'Geen actieve website geselecteerd.'}</h1>
             </div>
           </div>
           <div className="topbar-actions">
@@ -486,8 +537,26 @@ function App() {
         )}
         {view === 'API Docs' && <DocsView />}
         {view === 'MCP Server' && <McpView />}
-        {view === 'AI Models' && <ModelsView models={models} refresh={async () => setModels(await api.refreshModels())} />}
-        {view === 'Users' && <UsersView users={users} refresh={async () => setUsers(await api.users())} />}
+        {view === 'Users' && (
+          <UsersView
+            closeUserDialog={closeUserDialog}
+            deleteUser={deleteUser}
+            editUserId={editUserId}
+            email={userFormEmail}
+            isActive={userFormActive}
+            name={userFormName}
+            openEditUserDialog={openEditUserDialog}
+            openNewUserDialog={openNewUserDialog}
+            role={userFormRole}
+            saveUser={saveUser}
+            setEmail={setUserFormEmail}
+            setIsActive={setUserFormActive}
+            setName={setUserFormName}
+            setRole={setUserFormRole}
+            userDialogMode={userDialogMode}
+            users={users}
+          />
+        )}
         {view === 'Settings' && (
           <SettingsView
             key={`${settings.google_client_id}:${settings.app_url_origin}:${settings.default_summary_model}:${settings.default_embedding_model}:${settings.default_agent_model}`}
@@ -563,14 +632,7 @@ function formatBuildTime(value: string) {
 }
 
 function SmawaMark() {
-  return (
-    <svg className="smawa-mark" viewBox="0 0 64 64" aria-hidden="true">
-      <path className="smawa-mark-accent" d="M18 9h29l-12 8H6L18 9Z" />
-      <path d="M6 17h29v18H18v11H6V17Z" />
-      <path d="M35 35h23v18H29V42l6-7Z" />
-      <path className="smawa-mark-muted" d="M6 46h23v8L18 61 6 54v-8Z" />
-    </svg>
-  )
+  return <img className="smawa-mark" src={smawaLogoSymbol} alt="" aria-hidden="true" />
 }
 
 function secondsBetween(start?: string | null, end?: string | null) {
@@ -1324,45 +1386,82 @@ function McpView() {
   )
 }
 
-function ModelsView({ models, refresh }: { models: ModelConfig[]; refresh: () => void }) {
+function UsersView(props: {
+  closeUserDialog: () => void
+  deleteUser: (user: User) => void
+  editUserId: number | null
+  email: string
+  isActive: boolean
+  name: string
+  openEditUserDialog: (user: User) => void
+  openNewUserDialog: () => void
+  role: string
+  saveUser: () => void
+  setEmail: (value: string) => void
+  setIsActive: (value: boolean) => void
+  setName: (value: string) => void
+  setRole: (value: string) => void
+  userDialogMode: 'create' | 'edit' | null
+  users: User[]
+}) {
   return (
     <section className="panel wide">
-      <div className="panel-title"><Sparkles size={18} /> AI modellen</div>
-      <button className="secondary" onClick={refresh}><RefreshCw size={16} /> Refresh catalogus</button>
-      <div className="table-list">
-        {models.map((model) => (
-          <div className="table-row" key={model.id}>
-            <strong>{model.provider} · {model.model}</strong>
-            <span>{model.purpose}</span>
-            <small>{model.best_for}</small>
-          </div>
-        ))}
+      <div className="panel-heading-row">
+        <div className="panel-title"><Users size={18} /> Users</div>
+        <button className="primary" onClick={props.openNewUserDialog}><Plus size={17} /> Nieuwe user</button>
       </div>
-    </section>
-  )
-}
-
-function UsersView({ users, refresh }: { users: User[]; refresh: () => void }) {
-  async function setRole(user: User, role: string) {
-    await api.updateUserRole(user.id, role)
-    await refresh()
-  }
-  return (
-    <section className="panel wide">
-      <div className="panel-title"><Users size={18} /> User management</div>
-      <div className="table-list">
-        {users.map((item) => (
+      <div className="table-list user-list">
+        {props.users.map((item) => (
           <div className="table-row user-management-row" key={item.id}>
-            <strong>{item.email}</strong>
-            <span>{item.name || '-'}</span>
-            <select value={item.role} onChange={(event) => setRole(item, event.target.value)}>
-              <option value="guest">guest</option>
-              <option value="user">user</option>
-              <option value="admin">admin</option>
-            </select>
+            <div>
+              <strong>{item.email}</strong>
+              <small>{item.name || '-'}</small>
+            </div>
+            <span className={item.is_active ? 'status-ok compact-status' : 'status-warn compact-status'}>
+              {item.is_active ? 'actief' : 'inactief'}
+            </span>
+            <span>{item.role}</span>
+            <div className="row-actions">
+              <button title="Bewerken" onClick={() => props.openEditUserDialog(item)}><Pencil size={16} /></button>
+              <button title="Verwijderen" onClick={() => props.deleteUser(item)}><Trash2 size={16} /></button>
+            </div>
           </div>
         ))}
+        {props.users.length === 0 && <p className="empty">Nog geen users. Maak je eerste user aan.</p>}
       </div>
+
+      {props.userDialogMode && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={props.closeUserDialog}>
+          <div className="modal-panel user-modal" role="dialog" aria-modal="true" aria-labelledby="user-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="panel-heading-row">
+              <div className="panel-title" id="user-dialog-title"><Save size={18} /> {props.editUserId ? 'User bewerken' : 'Nieuwe user'}</div>
+              <button className="icon-button" onClick={props.closeUserDialog} title="Sluiten"><X size={17} /></button>
+            </div>
+            <label>E-mail</label>
+            <input value={props.email} onChange={(event) => props.setEmail(event.target.value)} autoFocus />
+            <label>Naam</label>
+            <input value={props.name} onChange={(event) => props.setName(event.target.value)} />
+            <div className="form-grid two-columns">
+              <div>
+                <label>Rol</label>
+                <select value={props.role} onChange={(event) => props.setRole(event.target.value)}>
+                  <option value="guest">guest</option>
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+              <label className="checkbox-line">
+                <input type="checkbox" checked={props.isActive} onChange={(event) => props.setIsActive(event.target.checked)} />
+                Actief
+              </label>
+            </div>
+            <div className="button-row modal-actions">
+              <button className="secondary" onClick={props.closeUserDialog}>Annuleren</button>
+              <button className="primary" onClick={props.saveUser} disabled={!props.email.trim()}><Save size={17} /> Opslaan</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -1453,8 +1552,8 @@ function SettingsView({
             models={models}
             provider={summaryProvider}
             model={summaryModel}
-            purposes={['chat', 'reasoning', 'multimodal', 'summary']}
-            recommendedLabel="Aanbevolen voor agent-analyse"
+            filterModel={isSummaryModel}
+            recommendedLabel="Aanbevolen voor samenvattingen"
             onChange={(next) => {
               setSummaryProvider(next.provider)
               setSummaryModel(next.model)
@@ -1465,7 +1564,7 @@ function SettingsView({
             models={models}
             provider={embeddingProvider}
             model={embeddingModel}
-            purposes={['embedding']}
+            filterModel={isSupportedEmbeddingModel}
             recommendedLabel="Aanbevolen voor embeddings"
             onChange={(next) => {
               setEmbeddingProvider(next.provider)
@@ -1477,7 +1576,7 @@ function SettingsView({
             models={models}
             provider={agentProvider}
             model={agentModel}
-            purposes={['chat', 'reasoning', 'multimodal', 'summary']}
+            filterModel={(item) => ['chat', 'reasoning', 'multimodal', 'summary'].includes(item.purpose)}
             recommendedLabel="Aanbevolen voor agent-analyse"
             onChange={(next) => {
               setAgentProvider(next.provider)
@@ -1547,39 +1646,126 @@ function ModelSelect({
   models,
   provider,
   model,
-  purposes,
+  filterModel,
   recommendedLabel,
   onChange
 }: {
   models: ModelConfig[]
   provider: string
   model: string
-  purposes: string[]
+  filterModel: (model: ModelConfig) => boolean
   recommendedLabel: string
   onChange: (value: { provider: string; model: string }) => void
 }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const comboboxRef = useRef<HTMLDivElement>(null)
   const candidates = models
-    .filter((item) => purposes.includes(item.purpose))
+    .filter(filterModel)
     .sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model))
   const selectedKey = `${provider}||${model}`
   const selected = candidates.find((item) => `${item.provider}||${item.model}` === selectedKey)
   const hasSelected = Boolean(selected)
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredCandidates = normalizedQuery
+    ? candidates.filter((item) => modelSearchText(item).includes(normalizedQuery))
+    : candidates
+  const selectedInFiltered = filteredCandidates.some((item) => `${item.provider}||${item.model}` === selectedKey)
+  const visibleCandidates = selected && !selectedInFiltered ? [selected, ...filteredCandidates] : filteredCandidates
+  const selectionTitle = selected ? selected.model : model
+  const selectionProvider = selected ? selected.provider : provider
+  const selectionPurpose = selected ? selected.purpose : 'handmatig'
+
+  useEffect(() => {
+    if (!open) return
+    function handleOutsideClick(event: MouseEvent) {
+      if (!comboboxRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [open])
 
   function handleChange(value: string) {
     const [nextProvider, nextModel] = value.split('||')
     onChange({ provider: nextProvider || provider, model: nextModel || model })
+    setOpen(false)
+    setQuery('')
   }
 
   return (
-    <div className={selected?.is_default ? 'model-select recommended-model' : 'model-select'}>
-      <select value={selectedKey} onChange={(event) => handleChange(event.target.value)}>
-        {!hasSelected && <option value={selectedKey}>{provider} - {model} - handmatig ingesteld</option>}
-        {candidates.map((item) => (
-          <option value={`${item.provider}||${item.model}`} key={`${item.provider}:${item.model}`}>
-            {item.is_default ? '** ' : ''}{item.provider} - {item.model} - {item.purpose} - {compactTitle(item.best_for, 120)}
-          </option>
-        ))}
-      </select>
+    <div className={selected?.is_default ? 'model-select recommended-model' : 'model-select'} ref={comboboxRef}>
+      <button
+        className="model-combobox-button"
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="model-selected-grid">
+          <span className="model-provider-pill">{selectionProvider}</span>
+          <strong>{selectionTitle}</strong>
+          <span>{selectionPurpose}</span>
+          {!hasSelected && <span className="model-manual-note">handmatig ingesteld</span>}
+        </span>
+        <ChevronDown size={17} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="model-combobox-menu">
+          <div className="model-select-search">
+            <Search size={15} aria-hidden="true" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setOpen(false)
+              }}
+              placeholder="Zoek op provider, model, type of toepassing"
+              aria-label="Zoeken in modellen"
+            />
+          </div>
+          <div className="model-option-header" aria-hidden="true">
+            <span>Provider</span>
+            <span>Model</span>
+            <span>Type</span>
+            <span>Toepassing</span>
+          </div>
+          <div className="model-option-list" role="listbox">
+            {!hasSelected && (
+              <button className="model-option-row selected" type="button" role="option" aria-selected="true" onClick={() => setOpen(false)}>
+                <span className="model-provider-pill">{provider}</span>
+                <strong>{model}</strong>
+                <span>handmatig</span>
+                <span>Dit model staat ingesteld, maar staat niet in de gefilterde catalogus.</span>
+              </button>
+            )}
+            {visibleCandidates.map((item) => {
+              const key = `${item.provider}||${item.model}`
+              return (
+                <button
+                  className={key === selectedKey ? 'model-option-row selected' : 'model-option-row'}
+                  type="button"
+                  role="option"
+                  aria-selected={key === selectedKey}
+                  value={key}
+                  key={`${item.provider}:${item.model}`}
+                  onClick={() => handleChange(key)}
+                >
+                  <span className="model-provider-pill">{item.provider}</span>
+                  <strong>{item.model}</strong>
+                  <span>{item.purpose}</span>
+                  <span>{compactTitle(item.best_for, 150)}</span>
+                </button>
+              )
+            })}
+            {visibleCandidates.length === 0 && hasSelected && (
+              <div className="model-option-empty">Geen passende modellen gevonden.</div>
+            )}
+          </div>
+        </div>
+      )}
       {selected && (
         <div className="model-select-meta">
           {selected.is_default && <span className="recommended-badge">{recommendedLabel}</span>}
@@ -1589,6 +1775,20 @@ function ModelSelect({
       )}
     </div>
   )
+}
+
+function isSummaryModel(item: ModelConfig) {
+  const name = `${item.model} ${item.purpose}`.toLowerCase()
+  return ['chat', 'reasoning', 'summary'].includes(item.purpose)
+    && !['embed', 'image', 'vision', 'audio', 'tts', 'whisper'].some((token) => name.includes(token))
+}
+
+function isSupportedEmbeddingModel(item: ModelConfig) {
+  return item.provider === 'openai' && item.purpose === 'embedding' && supportedEmbeddingModels.has(item.model)
+}
+
+function modelSearchText(item: ModelConfig) {
+  return `${item.provider} ${item.model} ${item.purpose} ${item.best_for}`.toLowerCase()
 }
 
 function PromptManager({ prompts, saveAnalysisPrompt }: { prompts: AnalysisPrompt[]; saveAnalysisPrompt: (promptId: string, promptText: string) => Promise<void> }) {

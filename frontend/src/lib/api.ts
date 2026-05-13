@@ -151,7 +151,12 @@ export const api = {
   models: () => request<ModelConfig[]>('/api/models'),
   refreshModels: () => request<ModelConfig[]>('/api/models/refresh', { method: 'POST' }),
   users: () => request<User[]>('/api/users'),
+  createUser: (data: { email: string; name: string; role: string; is_active: boolean }) =>
+    request<User>('/api/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id: number, data: { email?: string; name?: string; role?: string; is_active?: boolean }) =>
+    request<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateUserRole: (id: number, role: string) => request<User>(`/api/users/${id}/role?role=${encodeURIComponent(role)}`, { method: 'PATCH' }),
+  deleteUser: (id: number) => request<{ status: string }>(`/api/users/${id}`, { method: 'DELETE' }),
   providerSettings: () => request<ProviderSettings>('/api/settings/providers'),
   saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string; google_client_secret?: string }) =>
     request<ProviderSettings>('/api/settings/providers', { method: 'PUT', body: JSON.stringify(data) }),

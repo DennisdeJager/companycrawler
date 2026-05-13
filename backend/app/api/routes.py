@@ -23,7 +23,9 @@ from app.schemas.dto import (
     ScanRead,
     SearchRequest,
     SearchResult,
+    UserCreate,
     UserRead,
+    UserUpdate,
     WebsiteCreate,
     WebsiteRead,
     WebsiteUpdate,
@@ -244,17 +246,75 @@ def list_users(db: Session = Depends(get_db)) -> list[User]:
     return db.query(User).order_by(User.created_at).all()
 
 
+def _validate_user_role(role: str) -> UserRole:
+    if role not in {item.value for item in UserRole}:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    return UserRole(role)
+
+
+@router.post("/users", response_model=UserRead)
+def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
+    email = payload.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email")
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=409, detail="User already exists")
+    user = User(
+        email=email,
+        name=payload.name.strip(),
+        google_sub=f"manual:{email}",
+        role=_validate_user_role(payload.role),
+        is_active=payload.is_active,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.patch("/users/{user_id}", response_model=UserRead)
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if payload.email is not None:
+        email = payload.email.strip().lower()
+        if "@" not in email:
+            raise HTTPException(status_code=400, detail="Invalid email")
+        existing = db.query(User).filter(User.email == email, User.id != user_id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="User already exists")
+        user.email = email
+    if payload.name is not None:
+        user.name = payload.name.strip()
+    if payload.role is not None:
+        user.role = _validate_user_role(payload.role)
+    if payload.is_active is not None:
+        user.is_active = payload.is_active
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 @router.patch("/users/{user_id}/role", response_model=UserRead)
 def update_user_role(user_id: int, role: str, db: Session = Depends(get_db)) -> User:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if role not in {item.value for item in UserRole}:
-        raise HTTPException(status_code=400, detail="Invalid role")
-    user.role = UserRole(role)
+    user.role = _validate_user_role(role)
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.post("/websites", response_model=WebsiteRead)

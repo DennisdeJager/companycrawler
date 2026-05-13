@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] AI Models uit de navigatie verwijderd en gebruikersbeheer uitgebreid met toevoegen, wijzigen en verwijderen via compacte modals.
 - [x] Settings uitgebreid met centrale modelselecties voor summary, embeddings en agent-analyse, inclusief aanbevolen modellen uit de AI-catalogus.
 - [x] Development login met `admin@example.com` verwijderd; eerste Google gebruiker wordt admin en latere gebruikers blijven guest tot roltoekenning.
 - [x] Actieve website-selectie wordt per gebruiker onthouden na een page reload.

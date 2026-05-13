@@ -62,9 +62,15 @@ def _upsert_google_user(db: Session, email: str, name: str, google_sub: str, is_
         remove_dev_admin_user(db)
     user = db.query(User).filter(User.google_sub == google_sub).first()
     if not user:
-        role = UserRole.admin if is_google_oauth and not has_real_google_admin(db) else UserRole.guest
-        user = User(email=email, name=name, google_sub=google_sub, role=role)
-        db.add(user)
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            user.google_sub = google_sub
+            if name:
+                user.name = name
+        else:
+            role = UserRole.admin if is_google_oauth and not has_real_google_admin(db) else UserRole.guest
+            user = User(email=email, name=name, google_sub=google_sub, role=role)
+            db.add(user)
     elif is_google_oauth and user.role == UserRole.guest and not has_real_google_admin(db):
         user.role = UserRole.admin
     user.last_login_at = datetime.utcnow()
