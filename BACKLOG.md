@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Settings modeldropdown verbreed, pagina-hoog gemaakt en clipping/z-index opgelost.
 - [x] Smawa woordmerk als transparante frontend asset toegevoegd en gebruikt voor de app branding.
 - [x] Modelselecties overzichtelijk gemaakt met zoekbare kolommen en gefilterde summary- en embeddingmodellen.
 - [x] AI Models uit de navigatie verwijderd en gebruikersbeheer uitgebreid met toevoegen, wijzigen en verwijderen via compacte modals.

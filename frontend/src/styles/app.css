@@ -869,8 +869,14 @@ button.compact {
   margin: 16px 0;
 }
 .settings-panel {
+  align-content: start;
   display: grid;
   gap: 16px;
+  max-width: none;
+  min-height: calc(100vh - 112px);
+  overflow: visible;
+  position: relative;
+  z-index: 3;
 }
 .settings-tabs {
   display: flex;
@@ -897,13 +903,15 @@ button.compact {
   color: #0f6f71;
 }
 .settings-tab-body {
-  max-width: 720px;
+  min-height: calc(100vh - 220px);
+  max-width: none;
+  width: 100%;
 }
 .settings-tab-body button.primary {
   margin-top: 14px;
 }
 .compact-settings {
-  max-width: 560px;
+  max-width: 720px;
 }
 .prompt-tab-body {
   max-width: none;
@@ -919,6 +927,10 @@ button.compact {
   display: grid;
   gap: 8px;
   position: relative;
+  z-index: 1;
+}
+.model-select:has(.model-combobox-menu) {
+  z-index: 50;
 }
 .model-select.recommended-model .model-combobox-button {
   border-color: #8ac99d;
@@ -943,7 +955,7 @@ button.compact {
   align-items: center;
   display: grid;
   gap: 6px;
-  grid-template-columns: minmax(82px, 0.65fr) minmax(170px, 1.4fr) minmax(72px, 0.5fr) minmax(120px, 0.8fr);
+  grid-template-columns: minmax(96px, 0.55fr) minmax(260px, 1.35fr) minmax(120px, 0.55fr) minmax(180px, 1fr);
   min-width: 0;
   width: 100%;
 }
@@ -982,7 +994,7 @@ button.compact {
   position: absolute;
   right: 0;
   top: 56px;
-  z-index: 40;
+  z-index: 200;
 }
 .model-select-search {
   align-items: center;
@@ -1007,7 +1019,7 @@ button.compact {
 .model-option-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(82px, 0.65fr) minmax(170px, 1.15fr) minmax(72px, 0.45fr) minmax(220px, 1.7fr);
+  grid-template-columns: minmax(96px, 0.55fr) minmax(260px, 1.15fr) minmax(120px, 0.5fr) minmax(360px, 1.8fr);
 }
 .model-option-header {
   color: #66727f;
@@ -1019,7 +1031,7 @@ button.compact {
 .model-option-list {
   display: grid;
   gap: 4px;
-  max-height: 320px;
+  max-height: min(520px, calc(100vh - 430px));
   overflow: auto;
   padding-right: 2px;
 }
