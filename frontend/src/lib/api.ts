@@ -52,6 +52,18 @@ export type User = {
   last_login_at: string | null
 }
 
+export type ProviderSettings = {
+  openai_configured: boolean
+  openrouter_configured: boolean
+  google_auth_enabled: boolean
+  google_client_id: string
+  default_summary_provider: string
+  default_summary_model: string
+  default_embedding_provider: string
+  default_embedding_model: string
+  warnings: string[]
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
@@ -66,6 +78,7 @@ export const api = {
   login: (credential: string) => request<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
   websites: () => request<Website[]>('/api/websites'),
   createWebsite: (url: string, company_name: string) => request<Website>('/api/websites', { method: 'POST', body: JSON.stringify({ url, company_name }) }),
+  updateWebsite: (id: number, data: { url?: string; company_name?: string }) => request<Website>(`/api/websites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   resetWebsite: (id: number) => request<{ status: string }>(`/api/websites/${id}/reset`, { method: 'POST' }),
   deleteWebsite: (id: number) => request<{ status: string }>(`/api/websites/${id}`, { method: 'DELETE' }),
   detectCompanyName: (url: string) => request<{ company_name: string }>(`/api/detect-company-name?url=${encodeURIComponent(url)}`, { method: 'POST' }),
@@ -75,5 +88,9 @@ export const api = {
   models: () => request<ModelConfig[]>('/api/models'),
   refreshModels: () => request<ModelConfig[]>('/api/models/refresh', { method: 'POST' }),
   users: () => request<User[]>('/api/users'),
+  updateUserRole: (id: number, role: string) => request<User>(`/api/users/${id}/role?role=${encodeURIComponent(role)}`, { method: 'PATCH' }),
+  providerSettings: () => request<ProviderSettings>('/api/settings/providers'),
+  saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string }) =>
+    request<ProviderSettings>('/api/settings/providers', { method: 'PUT', body: JSON.stringify(data) }),
   mcp: () => request<{ tools: { name: string; description: string }[] }>('/mcp')
 }

@@ -1,0 +1,60 @@
+from datetime import datetime
+
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.models import AppSetting
+
+
+SECRET_KEYS = {"openai_api_key", "openrouter_api_key"}
+
+
+def get_setting(db: Session | None, key: str, default: str = "") -> str:
+    if db is not None:
+        row = db.get(AppSetting, key)
+        if row and row.value:
+            return row.value
+    settings = get_settings()
+    return str(getattr(settings, key, default) or default)
+
+
+def set_setting(db: Session, key: str, value: str, is_secret: bool | None = None) -> AppSetting:
+    row = db.get(AppSetting, key)
+    if not row:
+        row = AppSetting(key=key)
+        db.add(row)
+    row.value = value
+    row.is_secret = key in SECRET_KEYS if is_secret is None else is_secret
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def provider_status(db: Session) -> dict:
+    settings = get_settings()
+    openai_key = get_setting(db, "openai_api_key", settings.openai_api_key)
+    openrouter_key = get_setting(db, "openrouter_api_key", settings.openrouter_api_key)
+    google_client_id = get_setting(db, "google_client_id", settings.google_client_id)
+    summary_provider = get_setting(db, "default_summary_provider", settings.default_summary_provider)
+    summary_model = get_setting(db, "default_summary_model", settings.default_summary_model)
+    embedding_provider = get_setting(db, "default_embedding_provider", settings.default_embedding_provider)
+    embedding_model = get_setting(db, "default_embedding_model", settings.default_embedding_model)
+    warnings = []
+    if not openai_key and not openrouter_key:
+        warnings.append("Geen OpenAI of OpenRouter API key ingesteld. Scans gebruiken fallback-samenvattingen en lokale embeddings.")
+    if not openai_key:
+        warnings.append("Geen OpenAI API key ingesteld. OpenAI embeddings en OpenAI modelcatalogus zijn niet live beschikbaar.")
+    if not google_client_id:
+        warnings.append("Google login is niet geconfigureerd. Development login gebruikt tijdelijk een e-mailadres.")
+    return {
+        "openai_configured": bool(openai_key),
+        "openrouter_configured": bool(openrouter_key),
+        "google_auth_enabled": bool(google_client_id),
+        "google_client_id": google_client_id,
+        "default_summary_provider": summary_provider,
+        "default_summary_model": summary_model,
+        "default_embedding_provider": embedding_provider,
+        "default_embedding_model": embedding_model,
+        "warnings": warnings,
+    }

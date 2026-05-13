@@ -10,6 +10,8 @@ from app.schemas.dto import (
     DocumentRead,
     GoogleLoginRequest,
     ModelConfigRead,
+    ProviderSettingsRead,
+    ProviderSettingsUpdate,
     ScanCreate,
     ScanRead,
     SearchRequest,
@@ -23,6 +25,7 @@ from app.services.ai import AIService
 from app.services.auth import login_with_google
 from app.services.crawler import CompanyCrawler
 from app.services.search import semantic_search
+from app.services.settings_store import provider_status, set_setting
 
 router = APIRouter(prefix="/api")
 
@@ -30,6 +33,23 @@ router = APIRouter(prefix="/api")
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "app": get_settings().app_name}
+
+
+@router.get("/settings/providers", response_model=ProviderSettingsRead)
+def get_provider_settings(db: Session = Depends(get_db)) -> dict:
+    return provider_status(db)
+
+
+@router.put("/settings/providers", response_model=ProviderSettingsRead)
+def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depends(get_db)) -> dict:
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
+        if value is None:
+            continue
+        if key in {"openai_api_key", "openrouter_api_key"} and value.strip() == "":
+            continue
+        set_setting(db, key, value.strip(), key in {"openai_api_key", "openrouter_api_key"})
+    return provider_status(db)
 
 
 @router.post("/auth/google", response_model=UserRead)
@@ -154,7 +174,7 @@ async def search(payload: SearchRequest, db: Session = Depends(get_db)) -> list[
 @router.get("/models", response_model=list[ModelConfigRead])
 async def list_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
     if db.query(ModelConfig).count() == 0:
-        for item in await AIService().list_models():
+        for item in await AIService(db).list_models():
             db.add(ModelConfig(**item))
         db.commit()
     return db.query(ModelConfig).order_by(ModelConfig.provider, ModelConfig.model).all()
@@ -163,7 +183,7 @@ async def list_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
 @router.post("/models/refresh", response_model=list[ModelConfigRead])
 async def refresh_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
     db.query(ModelConfig).delete()
-    for item in await AIService().list_models():
+    for item in await AIService(db).list_models():
         db.add(ModelConfig(**item))
     db.commit()
     return db.query(ModelConfig).order_by(ModelConfig.provider, ModelConfig.model).all()

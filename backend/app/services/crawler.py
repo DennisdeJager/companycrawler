@@ -38,7 +38,7 @@ class CompanyCrawler:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.settings = get_settings()
-        self.ai = AIService()
+        self.ai = AIService(db)
         self.robots: dict[str, robotparser.RobotFileParser] = {}
 
     async def detect_company_name(self, url: str) -> str:

@@ -103,3 +103,25 @@ class UserRead(BaseModel):
 
 class GoogleLoginRequest(BaseModel):
     credential: str
+
+
+class ProviderSettingsRead(BaseModel):
+    openai_configured: bool
+    openrouter_configured: bool
+    google_auth_enabled: bool
+    google_client_id: str
+    default_summary_provider: str
+    default_summary_model: str
+    default_embedding_provider: str
+    default_embedding_model: str
+    warnings: list[str]
+
+
+class ProviderSettingsUpdate(BaseModel):
+    openai_api_key: str | None = None
+    openrouter_api_key: str | None = None
+    google_client_id: str | None = None
+    default_summary_provider: str | None = None
+    default_summary_model: str | None = None
+    default_embedding_provider: str | None = None
+    default_embedding_model: str | None = None

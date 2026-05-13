@@ -5,19 +5,38 @@ import re
 from collections import Counter
 
 import httpx
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.services.settings_store import get_setting
 
 
 class AIService:
-    def __init__(self) -> None:
+    def __init__(self, db: Session | None = None) -> None:
         self.settings = get_settings()
+        self.db = db
+
+    @property
+    def openai_api_key(self) -> str:
+        return get_setting(self.db, "openai_api_key", self.settings.openai_api_key)
+
+    @property
+    def openrouter_api_key(self) -> str:
+        return get_setting(self.db, "openrouter_api_key", self.settings.openrouter_api_key)
+
+    @property
+    def summary_model(self) -> str:
+        return get_setting(self.db, "default_summary_model", self.settings.default_summary_model)
+
+    @property
+    def embedding_model(self) -> str:
+        return get_setting(self.db, "default_embedding_model", self.settings.default_embedding_model)
 
     async def detect_company_name(self, url: str, homepage_text: str) -> str:
         title_match = re.search(r"<title>(.*?)</title>", homepage_text, re.I | re.S)
         seed = title_match.group(1) if title_match else homepage_text[:200]
         clean = re.sub(r"\s+", " ", seed).strip()
-        if self.settings.openai_api_key:
+        if self.openai_api_key:
             prompt = f"Extract only the full company name from this homepage text for {url}. Return only the name.\n\n{clean[:4000]}"
             result = await self._chat_openai(prompt, max_tokens=80)
             if result:
@@ -27,7 +46,7 @@ class AIService:
 
     async def summarize(self, title: str, text: str) -> tuple[str, str]:
         clean = re.sub(r"\s+", " ", text).strip()
-        if self.settings.openai_api_key:
+        if self.openai_api_key:
             prompt = (
                 "Vat deze pagina of dit bestand in maximaal 2 korte regels samen. "
                 "Vertel bondig waar de content over gaat. Geef daarna op een nieuwe regel "
@@ -44,13 +63,13 @@ class AIService:
         return fallback, fallback[:180]
 
     async def embed(self, text: str) -> list[float]:
-        if self.settings.openai_api_key:
+        if self.openai_api_key:
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     response = await client.post(
                         "https://api.openai.com/v1/embeddings",
-                        headers={"Authorization": f"Bearer {self.settings.openai_api_key}"},
-                        json={"model": self.settings.default_embedding_model, "input": text[:8000]},
+                        headers={"Authorization": f"Bearer {self.openai_api_key}"},
+                        json={"model": self.embedding_model, "input": text[:8000]},
                     )
                     response.raise_for_status()
                     return response.json()["data"][0]["embedding"]
@@ -60,14 +79,14 @@ class AIService:
 
     async def list_models(self) -> list[dict[str, str]]:
         models: list[dict[str, str]] = []
-        if self.settings.openai_api_key:
+        if self.openai_api_key:
             models.extend(await self._list_openai_models())
-        if self.settings.openrouter_api_key:
+        if self.openrouter_api_key:
             models.extend(await self._list_openrouter_models())
         if not models:
             models = [
-                {"provider": "openai", "model": self.settings.default_summary_model, "purpose": "summary", "best_for": "Goede balans tussen kwaliteit en kosten voor samenvattingen."},
-                {"provider": "openai", "model": self.settings.default_embedding_model, "purpose": "embedding", "best_for": "Standaard embeddings voor semantische zoekopdrachten."},
+                {"provider": "openai", "model": self.summary_model, "purpose": "summary", "best_for": "Goede balans tussen kwaliteit en kosten voor samenvattingen."},
+                {"provider": "openai", "model": self.embedding_model, "purpose": "embedding", "best_for": "Standaard embeddings voor semantische zoekopdrachten."},
                 {"provider": "openrouter", "model": "openrouter/auto", "purpose": "summary", "best_for": "Fallback-routering wanneer OpenRouter is geconfigureerd."},
             ]
         return models
@@ -77,9 +96,9 @@ class AIService:
             async with httpx.AsyncClient(timeout=45) as client:
                 response = await client.post(
                     "https://api.openai.com/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {self.settings.openai_api_key}"},
+                    headers={"Authorization": f"Bearer {self.openai_api_key}"},
                     json={
-                        "model": self.settings.default_summary_model,
+                        "model": self.summary_model,
                         "messages": [{"role": "user", "content": prompt}],
                         "max_tokens": max_tokens,
                         "temperature": 0.2,
@@ -93,7 +112,7 @@ class AIService:
     async def _list_openai_models(self) -> list[dict[str, str]]:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
-                response = await client.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {self.settings.openai_api_key}"})
+                response = await client.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {self.openai_api_key}"})
                 response.raise_for_status()
                 return [
                     {"provider": "openai", "model": item["id"], "purpose": "summary", "best_for": "Beschikbaar OpenAI model voor extractie en samenvattingen."}
@@ -105,7 +124,7 @@ class AIService:
     async def _list_openrouter_models(self) -> list[dict[str, str]]:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
-                response = await client.get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {self.settings.openrouter_api_key}"})
+                response = await client.get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {self.openrouter_api_key}"})
                 response.raise_for_status()
                 return [
                     {"provider": "openrouter", "model": item["id"], "purpose": "summary", "best_for": item.get("description", "OpenRouter model voor samenvattingen.")[:500]}

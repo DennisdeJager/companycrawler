@@ -17,7 +17,7 @@ def cosine(a: list[float], b: list[float]) -> float:
 
 
 async def semantic_search(db: Session, query: str, website_id: int | None, limit: int) -> list[dict]:
-    ai = AIService()
+    ai = AIService(db)
     query_embedding = await ai.embed(query)
     chunk_query = db.query(ContentChunk, Document, Website).join(Document).join(Website)
     if website_id:
@@ -48,4 +48,3 @@ async def semantic_search(db: Session, query: str, website_id: int | None, limit
         if len(results) >= limit:
             break
     return results
-

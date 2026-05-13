@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.entities import User, UserRole
+from app.services.settings_store import get_setting
 
 
 def login_with_google(db: Session, credential: str) -> User:
     settings = get_settings()
-    if settings.google_client_id:
-        payload = id_token.verify_oauth2_token(credential, requests.Request(), settings.google_client_id)
+    google_client_id = get_setting(db, "google_client_id", settings.google_client_id)
+    if google_client_id:
+        payload = id_token.verify_oauth2_token(credential, requests.Request(), google_client_id)
         email = payload["email"]
         name = payload.get("name", email)
         google_sub = payload["sub"]
@@ -31,4 +33,3 @@ def login_with_google(db: Session, credential: str) -> User:
     db.commit()
     db.refresh(user)
     return user
-
