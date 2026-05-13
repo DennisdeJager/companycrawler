@@ -49,6 +49,32 @@ jobs:
           tags: |
             type=sha,prefix=sha-
 
+      - name: Ensure Dockerfile
+        run: |
+          set -euo pipefail
+          if [ -f Dockerfile ]; then
+            exit 0
+          fi
+          if [ ! -f package.json ]; then
+            echo "No Dockerfile or package.json found. Add a Dockerfile at the repository root or use a Node app with package.json." >&2
+            exit 1
+          fi
+          cat > Dockerfile <<'DOCKERFILE'
+          FROM node:24-bookworm-slim AS deps
+          WORKDIR /app
+          COPY package.json package-lock.json* ./
+          RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+          FROM node:24-bookworm-slim AS runner
+          WORKDIR /app
+          ENV NODE_ENV=production
+          ENV PORT=3000
+          COPY --from=deps /app/node_modules ./node_modules
+          COPY . .
+          EXPOSE 3000
+          CMD ["npm", "start"]
+          DOCKERFILE
+
       - uses: docker/build-push-action@v6
         id: build
         with:
