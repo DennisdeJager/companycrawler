@@ -42,6 +42,9 @@ const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
   { label: 'Settings', icon: Settings }
 ]
 
+const buildCommit = import.meta.env.VITE_COMMIT_ID ?? 'dev'
+const buildTime = import.meta.env.VITE_BUILD_TIME ?? 'local'
+
 const emptySettings: ProviderSettings = {
   openai_configured: false,
   openrouter_configured: false,
@@ -227,6 +230,7 @@ function App() {
   if (!user && settings.google_auth_enabled) {
     return (
       <main className="guest-shell">
+        <BuildInfo />
         <section className="guest-panel">
           <ShieldCheck size={34} />
           <h1>Inloggen met Google</h1>
@@ -241,6 +245,7 @@ function App() {
   if (user?.role === 'guest') {
     return (
       <main className="guest-shell">
+        <BuildInfo />
         <section className="guest-panel">
           <ShieldCheck size={34} />
           <h1>Je account wacht op goedkeuring</h1>
@@ -252,6 +257,7 @@ function App() {
 
   return (
     <main className={`app-shell theme-${theme}`}>
+      <BuildInfo />
       <aside className="sidebar">
         <div className="brand">
           <img src={smawaLogoSymbol} alt="Smawa" />
@@ -361,6 +367,10 @@ function Dashboard(props: {
       <Inspector document={props.selectedDocument} website={props.selectedWebsite} />
     </section>
   )
+}
+
+function BuildInfo() {
+  return <div className="build-info">commit {buildCommit} · {buildTime}</div>
 }
 
 function secondsBetween(start?: string | null, end?: string | null) {

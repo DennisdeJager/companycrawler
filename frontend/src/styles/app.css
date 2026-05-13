@@ -10,6 +10,18 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; background: #f5f7f9; }
 button, input, select { font: inherit; }
 
+.build-info {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  z-index: 50;
+  color: #66727f;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 248px 1fr;
@@ -572,6 +584,9 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
   background:
     radial-gradient(circle at 85% 8%, rgba(88, 195, 196, 0.12), transparent 28%),
     #111820;
+}
+.theme-dark .build-info {
+  color: #9cafbd;
 }
 .theme-dark .workspace::before {
   filter: saturate(1.2) brightness(1.25);
