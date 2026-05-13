@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Transparant light Smawa-logo ingesteld voor darkmode.
 - [x] Analyse-run verwijderen toegevoegd vanaf de analyse-regel, inclusief alle gekoppelde jobs en resultaten.
 - [x] Analysecontext voor job 1 verbeterd met huidige websiteprofiel, semantische chunks en fallback op bekende bedrijfsnaam bij `onbekend`.
 - [x] Nieuwe Smawa logo's per thema toegevoegd en linker menubalk op `#0f1722` gezet.

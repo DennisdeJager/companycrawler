@@ -34,7 +34,7 @@ import {
   Users,
   X
 } from 'lucide-react'
-import smawaLogoDark from './assets/smawa-logo-background-0f1722.png'
+import smawaLogoDark from './assets/smawa-logo-light-transparent.png'
 import smawaLogoLight from './assets/smawa-logo-background-white.png'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
