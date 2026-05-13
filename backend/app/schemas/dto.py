@@ -88,6 +88,47 @@ class SearchResult(BaseModel):
     score: float
 
 
+class AnalysisPromptRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    prompt_id: str
+    title: str
+    description: str
+    prompt_text: str
+    sort_order: int
+    is_system_prompt: bool
+    updated_at: datetime
+
+
+class AnalysisPromptUpdate(BaseModel):
+    prompt_text: str = Field(min_length=1)
+
+
+class AnalysisJobResultRead(BaseModel):
+    id: int
+    prompt_id: str
+    status: str
+    summary: str
+    result_text: str
+    result_json: dict | list | str | int | float | bool | None = None
+    sources: list[dict] = []
+    error: str
+    completed_at: datetime | None = None
+
+
+class AnalysisRunRead(BaseModel):
+    id: int
+    website_id: int
+    status: str
+    model: str
+    extracted_variables: dict[str, str] = {}
+    error: str
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    jobs: list[AnalysisJobResultRead] = []
+
+
 class ModelConfigRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

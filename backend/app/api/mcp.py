@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.models import ScanJob, Website
+from app.models import AnalysisPrompt, AnalysisRun, ScanJob, Website
 from app.schemas.dto import SearchRequest
+from app.services.analysis import AnalysisService, seed_default_analysis_prompts, serialize_analysis_run
 from app.services.search import semantic_search
 
 router = APIRouter(prefix="/mcp", tags=["MCP"])
@@ -118,6 +119,66 @@ def _tool_descriptors() -> list[dict[str, Any]]:
             },
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
         },
+        {
+            "name": "list_analysis_prompts",
+            "title": "List analysis prompts",
+            "description": "List manageable default prompts for the company analysis agent jobs.",
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "outputSchema": {"type": "object", "properties": {"prompts": {"type": "array", "items": {"type": "object"}}}, "required": ["prompts"]},
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "run_company_analysis",
+            "title": "Run company analysis",
+            "description": "Run the 9-step agentic company analysis chain for a website.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"website_id": {"type": "integer", "minimum": 1}},
+                "required": ["website_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {"type": "object", "properties": {"id": {"type": "integer"}, "status": {"type": "string"}, "jobs": {"type": "array", "items": {"type": "object"}}}},
+            "annotations": {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "get_company_analysis",
+            "title": "Get company analysis",
+            "description": "Return a stored company analysis run with all job results.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"analysis_id": {"type": "integer", "minimum": 1}},
+                "required": ["analysis_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {"type": "object", "properties": {"id": {"type": "integer"}, "status": {"type": "string"}, "jobs": {"type": "array", "items": {"type": "object"}}}},
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "generate_company_scenarios",
+            "title": "Generate company scenarios",
+            "description": "Return scenario-ready opportunities from the latest stored company analysis.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"website_id": {"type": "integer", "minimum": 1}},
+                "required": ["website_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {"type": "object", "properties": {"scenarios": {"type": "array", "items": {"type": "object"}}}, "required": ["scenarios"]},
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
+        {
+            "name": "generate_poc_brief",
+            "title": "Generate PoC brief",
+            "description": "Return a PoC briefing based on the latest stored company analysis.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"website_id": {"type": "integer", "minimum": 1}},
+                "required": ["website_id"],
+                "additionalProperties": False,
+            },
+            "outputSchema": {"type": "object", "properties": {"brief": {"type": "object"}}, "required": ["brief"]},
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
+        },
     ]
 
 
@@ -211,6 +272,11 @@ async def _call_tool(tool_name: str, arguments: dict[str, Any], db: Session) -> 
         "get_scan_status": get_scan_status,
         "search_company_data": search_company_data,
         "get_company_profile": get_company_profile,
+        "list_analysis_prompts": list_analysis_prompts,
+        "run_company_analysis": run_company_analysis,
+        "get_company_analysis": get_company_analysis,
+        "generate_company_scenarios": generate_company_scenarios,
+        "generate_poc_brief": generate_poc_brief,
     }
     handler = handlers.get(tool_name)
     if not handler:
@@ -239,6 +305,16 @@ async def _invoke_tool(handler: Callable[..., Any], arguments: dict[str, Any], d
     elif handler is search_company_data:
         result = handler(payload=SearchRequest(**arguments), db=db)
     elif handler is get_company_profile:
+        result = handler(website_id=arguments.get("website_id"), db=db)
+    elif handler is list_analysis_prompts:
+        result = handler(db=db)
+    elif handler is run_company_analysis:
+        result = handler(website_id=arguments.get("website_id"), db=db)
+    elif handler is get_company_analysis:
+        result = handler(analysis_id=arguments.get("analysis_id"), db=db)
+    elif handler is generate_company_scenarios:
+        result = handler(website_id=arguments.get("website_id"), db=db)
+    elif handler is generate_poc_brief:
         result = handler(website_id=arguments.get("website_id"), db=db)
     else:
         raise ValueError("Unsupported MCP tool handler")
@@ -302,3 +378,89 @@ def get_company_profile(website_id: int, db: Session = Depends(get_db)) -> dict:
             for doc in website.documents
         ],
     }
+
+
+@router.post("/tools/list_analysis_prompts")
+def list_analysis_prompts(db: Session = Depends(get_db)) -> dict:
+    seed_default_analysis_prompts(db)
+    prompts = db.query(AnalysisPrompt).order_by(AnalysisPrompt.sort_order, AnalysisPrompt.prompt_id).all()
+    return {
+        "prompts": [
+            {
+                "prompt_id": prompt.prompt_id,
+                "title": prompt.title,
+                "description": prompt.description,
+                "sort_order": prompt.sort_order,
+                "is_system_prompt": prompt.is_system_prompt,
+                "updated_at": prompt.updated_at,
+            }
+            for prompt in prompts
+        ]
+    }
+
+
+@router.post("/tools/run_company_analysis")
+async def run_company_analysis(website_id: int, db: Session = Depends(get_db)) -> dict:
+    if not db.get(Website, website_id):
+        return {"error": "Website not found"}
+    return serialize_analysis_run(await AnalysisService(db).run_company_analysis(website_id))
+
+
+@router.post("/tools/get_company_analysis")
+def get_company_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
+    run = db.get(AnalysisRun, analysis_id)
+    if not run:
+        return {"error": "Analysis not found"}
+    return serialize_analysis_run(run)
+
+
+@router.post("/tools/generate_company_scenarios")
+def generate_company_scenarios(website_id: int, db: Session = Depends(get_db)) -> dict:
+    run = _latest_analysis(db, website_id)
+    if not run:
+        return {"error": "Analysis not found"}
+    jobs = serialize_analysis_run(run)["jobs"]
+    return {
+        "website_id": website_id,
+        "analysis_id": run.id,
+        "scenarios": [
+            {
+                "title": job["prompt_id"].replace("_", " ").title(),
+                "input": job["summary"],
+                "source_prompt": job["prompt_id"],
+            }
+            for job in jobs
+            if job["prompt_id"] in {"job_3_uitdagingen", "job_4_waardekansen", "job_8_marktcontext", "job_9_technologie_indicaties"}
+        ],
+    }
+
+
+@router.post("/tools/generate_poc_brief")
+def generate_poc_brief(website_id: int, db: Session = Depends(get_db)) -> dict:
+    run = _latest_analysis(db, website_id)
+    if not run:
+        return {"error": "Analysis not found"}
+    data = serialize_analysis_run(run)
+    jobs = {job["prompt_id"]: job for job in data["jobs"]}
+    return {
+        "website_id": website_id,
+        "analysis_id": run.id,
+        "brief": {
+            "bedrijf": data["extracted_variables"].get("Bedrijfsnaam", ""),
+            "plaats": data["extracted_variables"].get("Bedrijfsplaats", ""),
+            "regio": data["extracted_variables"].get("Regio", ""),
+            "profiel": jobs.get("job_2_bedrijfsprofiel", {}).get("summary", ""),
+            "uitdagingen": jobs.get("job_3_uitdagingen", {}).get("summary", ""),
+            "waardekansen": jobs.get("job_4_waardekansen", {}).get("summary", ""),
+            "technische_haakjes": jobs.get("job_9_technologie_indicaties", {}).get("summary", ""),
+        },
+    }
+
+
+def _latest_analysis(db: Session, website_id: int) -> AnalysisRun | None:
+    return (
+        db.query(AnalysisRun)
+        .filter(AnalysisRun.website_id == website_id)
+        .order_by(AnalysisRun.created_at.desc())
+        .first()
+    )

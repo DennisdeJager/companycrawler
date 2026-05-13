@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  ClipboardList,
   FileText,
   Globe2,
   KeyRound,
@@ -33,15 +34,17 @@ import {
   Users
 } from 'lucide-react'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
+import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
 
-type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
+type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
   { label: 'Dashboard', icon: Activity },
   { label: 'Websites', icon: Globe2 },
   { label: 'Scans', icon: Play },
   { label: 'Knowledge Graph', icon: Network },
+  { label: 'Analyse', icon: ClipboardList },
   { label: 'API Docs', icon: BookOpen },
   { label: 'MCP Server', icon: Cable },
   { label: 'AI Models', icon: Sparkles },
@@ -81,6 +84,9 @@ function App() {
   const [models, setModels] = useState<ModelConfig[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [settings, setSettings] = useState<ProviderSettings>(emptySettings)
+  const [analysisPrompts, setAnalysisPrompts] = useState<AnalysisPrompt[]>([])
+  const [analyses, setAnalyses] = useState<AnalysisRun[]>([])
+  const [activeAnalysis, setActiveAnalysis] = useState<AnalysisRun | null>(null)
   const [selectedWebsite, setSelectedWebsite] = useState<Website | null>(null)
   const [selectedDocument, setSelectedDocument] = useState<DocumentItem | null>(null)
   const [scan, setScan] = useState<Scan | null>(null)
@@ -94,16 +100,18 @@ function App() {
   const activeModel = useMemo(() => models.find((model) => model.purpose === 'summary') ?? models[0], [models])
 
   async function load() {
-    const [websiteRows, modelRows, userRows, providerSettings] = await Promise.all([
+    const [websiteRows, modelRows, userRows, providerSettings, promptRows] = await Promise.all([
       api.websites(),
       api.models(),
       api.users().catch(() => []),
-      api.providerSettings()
+      api.providerSettings(),
+      api.analysisPrompts()
     ])
     setWebsites(websiteRows)
     setModels(modelRows)
     setUsers(userRows)
     setSettings(providerSettings)
+    setAnalysisPrompts(promptRows)
     const website = selectedWebsite ? websiteRows.find((item) => item.id === selectedWebsite.id) ?? websiteRows[0] ?? null : websiteRows[0] ?? null
     await selectWebsite(website, false)
   }
@@ -121,6 +129,9 @@ function App() {
     const docRows = await api.documents(website.id)
     setDocuments(docRows)
     setSelectedDocument(docRows[0] ?? null)
+    const analysisRows = await api.analyses(website.id).catch(() => [])
+    setAnalyses(analysisRows)
+    setActiveAnalysis(analysisRows[0] ?? null)
     if (announce) setMessage(`${website.company_name} is actief geselecteerd.`)
   }
 
@@ -247,6 +258,23 @@ function App() {
     setMessage('Alle crawl-data voor deze website is verwijderd.')
   }
 
+  async function startAnalysis() {
+    if (!selectedWebsite) return
+    setMessage('Analyse-agent jobs worden uitgevoerd...')
+    setView('Analyse')
+    const created = await api.startAnalysis(selectedWebsite.id)
+    setActiveAnalysis(created)
+    const rows = await api.analyses(selectedWebsite.id)
+    setAnalyses(rows)
+    setMessage(created.status === 'completed' ? 'Analyse afgerond.' : `Analyse ${created.status}.`)
+  }
+
+  async function saveAnalysisPrompt(promptId: string, promptText: string) {
+    const saved = await api.saveAnalysisPrompt(promptId, promptText)
+    setAnalysisPrompts((rows) => rows.map((item) => (item.prompt_id === saved.prompt_id ? saved : item)))
+    setMessage('Analyseprompt opgeslagen.')
+  }
+
   function toggleTheme() {
     setTheme((current) => {
       const next = current === 'dark' ? 'light' : 'dark'
@@ -358,6 +386,15 @@ function App() {
 
         {view === 'Scans' && <ScansView activeModel={activeModel} message={message} scan={scan} startScan={startScan} pauseScan={pauseScan} stopScan={stopScan} />}
         {view === 'Knowledge Graph' && <KnowledgeView documents={documents} selectedDocument={selectedDocument} selectedWebsite={selectedWebsite} setSelectedDocument={setSelectedDocument} />}
+        {view === 'Analyse' && (
+          <AnalysisView
+            analyses={analyses}
+            activeAnalysis={activeAnalysis}
+            selectedWebsite={selectedWebsite}
+            setActiveAnalysis={setActiveAnalysis}
+            startAnalysis={startAnalysis}
+          />
+        )}
         {view === 'API Docs' && <DocsView />}
         {view === 'MCP Server' && <McpView />}
         {view === 'AI Models' && <ModelsView models={models} refresh={async () => setModels(await api.refreshModels())} />}
@@ -366,7 +403,9 @@ function App() {
           <SettingsView
             key={`${settings.google_client_id}:${settings.app_url_origin}:${settings.default_summary_model}:${settings.default_embedding_model}`}
             settings={settings}
+            prompts={analysisPrompts}
             setSettings={setSettings}
+            saveAnalysisPrompt={saveAnalysisPrompt}
             refresh={load}
           />
         )}
@@ -1038,6 +1077,85 @@ function connectorPath(from: MindNode, to: MindNode) {
   return `M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`
 }
 
+function AnalysisView({
+  analyses,
+  activeAnalysis,
+  selectedWebsite,
+  setActiveAnalysis,
+  startAnalysis
+}: {
+  analyses: AnalysisRun[]
+  activeAnalysis: AnalysisRun | null
+  selectedWebsite: Website | null
+  setActiveAnalysis: (analysis: AnalysisRun) => void
+  startAnalysis: () => void
+}) {
+  const [selectedPromptId, setSelectedPromptId] = useState<string>('')
+  const selectedJob = activeAnalysis?.jobs.find((job) => job.prompt_id === selectedPromptId) ?? activeAnalysis?.jobs[0] ?? null
+
+  useEffect(() => {
+    if (activeAnalysis?.jobs.length) setSelectedPromptId(activeAnalysis.jobs[0].prompt_id)
+  }, [activeAnalysis?.id])
+
+  return (
+    <section className="analysis-layout">
+      <div className="panel analysis-list-panel">
+        <div className="panel-title"><ClipboardList size={18} /> Analyse-agent</div>
+        <p className="body-text">{selectedWebsite ? `${selectedWebsite.company_name} wordt geanalyseerd met 9 vaste agent jobs.` : 'Selecteer eerst een website.'}</p>
+        <button className="primary" onClick={startAnalysis} disabled={!selectedWebsite}><Sparkles size={17} /> Analyse starten</button>
+        <div className="table-list compact-list">
+          {analyses.map((analysis) => (
+            <button
+              className={activeAnalysis?.id === analysis.id ? 'table-row analysis-run-row selected' : 'table-row analysis-run-row'}
+              key={analysis.id}
+              onClick={() => setActiveAnalysis(analysis)}
+            >
+              <strong>Analyse #{analysis.id}</strong>
+              <span>{analysis.status}</span>
+              <small>{new Date(analysis.created_at).toLocaleString()}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="panel analysis-detail-panel wide">
+        <div className="panel-title"><Network size={18} /> Jobresultaten</div>
+        {!activeAnalysis && <p className="body-text">Nog geen analyse voor deze website.</p>}
+        {activeAnalysis && (
+          <>
+            <div className="analysis-vars">
+              <span>{activeAnalysis.extracted_variables.Bedrijfsnaam || 'Bedrijf onbekend'}</span>
+              <span>{activeAnalysis.extracted_variables.Bedrijfsplaats || 'Plaats onbekend'}</span>
+              <span>{activeAnalysis.extracted_variables.Regio || 'Regio onbekend'}</span>
+            </div>
+            <div className="job-tabs">
+              {activeAnalysis.jobs.map((job) => (
+                <button className={selectedJob?.prompt_id === job.prompt_id ? 'active' : ''} key={job.prompt_id} onClick={() => setSelectedPromptId(job.prompt_id)}>
+                  {job.prompt_id.replace('job_', '').replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+            {selectedJob && (
+              <div className="analysis-result">
+                <div className="status-line">{selectedJob.status} · {selectedJob.completed_at ? new Date(selectedJob.completed_at).toLocaleString() : 'bezig'}</div>
+                {selectedJob.error && <pre className="scan-error">{selectedJob.error}</pre>}
+                <p>{selectedJob.summary || 'Geen samenvatting beschikbaar.'}</p>
+                <pre>{selectedJob.result_json ? JSON.stringify(selectedJob.result_json, null, 2) : selectedJob.result_text}</pre>
+                <div className="source-list">
+                  {selectedJob.sources.slice(0, 8).map((source, index) => (
+                    <a href={source.url} target="_blank" key={`${source.document_id}-${index}`}>
+                      {source.title || source.url || `Bron ${index + 1}`}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function DocsView() {
   return (
     <section className="panel docs-panel wide">
@@ -1065,6 +1183,11 @@ function McpView() {
       <code>POST /mcp/tools/get_scan_status</code>
       <code>POST /mcp/tools/search_company_data</code>
       <code>POST /mcp/tools/get_company_profile</code>
+      <code>POST /mcp/tools/list_analysis_prompts</code>
+      <code>POST /mcp/tools/run_company_analysis</code>
+      <code>POST /mcp/tools/get_company_analysis</code>
+      <code>POST /mcp/tools/generate_company_scenarios</code>
+      <code>POST /mcp/tools/generate_poc_brief</code>
     </section>
   )
 }
@@ -1112,7 +1235,19 @@ function UsersView({ users, refresh }: { users: User[]; refresh: () => void }) {
   )
 }
 
-function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSettings; setSettings: (settings: ProviderSettings) => void; refresh: () => void }) {
+function SettingsView({
+  settings,
+  prompts,
+  setSettings,
+  saveAnalysisPrompt,
+  refresh
+}: {
+  settings: ProviderSettings
+  prompts: AnalysisPrompt[]
+  setSettings: (settings: ProviderSettings) => void
+  saveAnalysisPrompt: (promptId: string, promptText: string) => Promise<void>
+  refresh: () => void
+}) {
   const [openaiKey, setOpenaiKey] = useState('')
   const [openrouterKey, setOpenrouterKey] = useState('')
   const [googleClientId, setGoogleClientId] = useState(settings.google_client_id)
@@ -1200,7 +1335,50 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
         />
         <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
       </div>
+      <PromptManager prompts={prompts} saveAnalysisPrompt={saveAnalysisPrompt} />
     </section>
+  )
+}
+
+function PromptManager({ prompts, saveAnalysisPrompt }: { prompts: AnalysisPrompt[]; saveAnalysisPrompt: (promptId: string, promptText: string) => Promise<void> }) {
+  const [selectedPromptId, setSelectedPromptId] = useState('')
+  const selected = prompts.find((prompt) => prompt.prompt_id === selectedPromptId) ?? prompts[0]
+  const [promptText, setPromptText] = useState('')
+
+  useEffect(() => {
+    if (selected) {
+      setSelectedPromptId(selected.prompt_id)
+      setPromptText(selected.prompt_text)
+    }
+  }, [selected?.prompt_id])
+
+  async function save() {
+    if (!selected) return
+    await saveAnalysisPrompt(selected.prompt_id, promptText)
+  }
+
+  return (
+    <div className="panel form-panel prompt-manager">
+      <div className="panel-title"><ClipboardList size={18} /> Promptbeheer</div>
+      <label>Prompt id</label>
+      <select value={selected?.prompt_id ?? ''} onChange={(event) => setSelectedPromptId(event.target.value)}>
+        {prompts.map((prompt) => (
+          <option value={prompt.prompt_id} key={prompt.prompt_id}>{prompt.prompt_id}</option>
+        ))}
+      </select>
+      {selected && (
+        <>
+          <small>{selected.title} · {selected.description}</small>
+          <textarea value={promptText} onChange={(event) => setPromptText(event.target.value)} />
+          {!promptText.trim() && <p className="inline-warning">Deze prompt mag niet leeg zijn.</p>}
+          <div className="prompt-meta">
+            <span>{selected.is_system_prompt ? 'Systeemprompt' : 'Agent job'}</span>
+            <span>Laatst gewijzigd {new Date(selected.updated_at).toLocaleString()}</span>
+          </div>
+          <button className="primary" onClick={save} disabled={!promptText.trim()}><Save size={17} /> Prompt opslaan</button>
+        </>
+      )}
+    </div>
   )
 }
 

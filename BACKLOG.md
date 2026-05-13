@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Agentische analyseflow met beheerbare prompts, analyse-opslag, REST/MCP tools en Analyse UI toegevoegd.
 - [x] MCP JSON-RPC endpoint geeft nu een nette parse error terug bij malformed JSON.
 - [x] MCP semantische zoekopdracht gerepareerd door de SQLAlchemy join expliciet te maken.
 - [x] Knowledge Graph mindmap vervangen door inklapbare, sleepbare en zoombare website explorer.

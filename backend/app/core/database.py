@@ -27,6 +27,7 @@ def _set_sqlite_pragmas(dbapi_connection, _connection_record):
 
 def init_db() -> None:
     from app.models import entities  # noqa: F401
+    from app.services.analysis import seed_default_analysis_prompts
 
     if engine.dialect.name == "postgresql":
         with engine.begin() as connection:
@@ -34,6 +35,11 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _upgrade_schema()
     _deduplicate_existing_vectors()
+    db = SessionLocal()
+    try:
+        seed_default_analysis_prompts(db)
+    finally:
+        db.close()
 
 
 def _upgrade_schema() -> None:

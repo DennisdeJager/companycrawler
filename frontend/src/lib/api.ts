@@ -85,6 +85,41 @@ export type ProviderSettings = {
   warnings: string[]
 }
 
+export type AnalysisPrompt = {
+  prompt_id: string
+  title: string
+  description: string
+  prompt_text: string
+  sort_order: number
+  is_system_prompt: boolean
+  updated_at: string
+}
+
+export type AnalysisJobResult = {
+  id: number
+  prompt_id: string
+  status: string
+  summary: string
+  result_text: string
+  result_json: unknown
+  sources: { document_id?: number; title?: string; url?: string; summary?: string }[]
+  error: string
+  completed_at: string | null
+}
+
+export type AnalysisRun = {
+  id: number
+  website_id: number
+  status: string
+  model: string
+  extracted_variables: Record<string, string>
+  error: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  jobs: AnalysisJobResult[]
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
@@ -118,5 +153,11 @@ export const api = {
   providerSettings: () => request<ProviderSettings>('/api/settings/providers'),
   saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string; google_client_secret?: string }) =>
     request<ProviderSettings>('/api/settings/providers', { method: 'PUT', body: JSON.stringify(data) }),
+  analysisPrompts: () => request<AnalysisPrompt[]>('/api/analysis-prompts'),
+  saveAnalysisPrompt: (promptId: string, prompt_text: string) =>
+    request<AnalysisPrompt>(`/api/analysis-prompts/${encodeURIComponent(promptId)}`, { method: 'PUT', body: JSON.stringify({ prompt_text }) }),
+  analyses: (websiteId: number) => request<AnalysisRun[]>(`/api/websites/${websiteId}/analyses`),
+  startAnalysis: (websiteId: number) => request<AnalysisRun>(`/api/websites/${websiteId}/analyses`, { method: 'POST' }),
+  analysis: (analysisId: number) => request<AnalysisRun>(`/api/analyses/${analysisId}`),
   mcp: () => request<{ tools: { name: string; description: string }[] }>('/mcp')
 }

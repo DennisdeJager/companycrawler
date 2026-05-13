@@ -62,6 +62,13 @@ class AIService:
         fallback = clean[:260] if clean else f"Content over {title or 'deze bron'}."
         return fallback, fallback[:180]
 
+    async def complete(self, prompt: str, max_tokens: int = 1400) -> str:
+        if self.openai_api_key:
+            result = await self._chat_openai(prompt, max_tokens=max_tokens)
+            if result:
+                return result
+        return self._fallback_completion(prompt)
+
     async def embed(self, text: str) -> list[float]:
         if self.openai_api_key:
             try:
@@ -143,6 +150,18 @@ class AIService:
             vector[index] += float(count)
         norm = math.sqrt(sum(value * value for value in vector)) or 1.0
         return [round(value / norm, 6) for value in vector]
+
+    def _fallback_completion(self, prompt: str) -> str:
+        if "Wat is de naam, de woonplaats en regio van dit bedrijf" in prompt:
+            return json.dumps({"Bedrijfsnaam": "onbekend", "Bedrijfsplaats": "onbekend", "Regio": "onbekend"}, ensure_ascii=False)
+        return json.dumps(
+            {
+                "samenvatting": "Lokale fallback: configureer een OpenAI API key voor volledige AI-analyse.",
+                "bewijsniveau": "ai_hypothese",
+                "opmerking": "Deze output is deterministisch gegenereerd omdat er geen AI-provider beschikbaar is.",
+            },
+            ensure_ascii=False,
+        )
 
 
 def embedding_to_json(vector: list[float]) -> str:

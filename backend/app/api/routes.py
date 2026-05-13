@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models import ContentChunk, Document, ModelConfig, ScanJob, User, Website
+from app.models import AnalysisPrompt, AnalysisRun, ContentChunk, Document, ModelConfig, ScanJob, User, Website
 from app.models.entities import ScanStatus, UserRole
 from app.schemas.dto import (
     DocumentDetail,
     DocumentRead,
+    AnalysisPromptRead,
+    AnalysisPromptUpdate,
+    AnalysisRunRead,
     GoogleLoginRequest,
     ModelConfigRead,
     ProviderSettingsRead,
@@ -26,6 +29,7 @@ from app.schemas.dto import (
     WebsiteUpdate,
 )
 from app.services.ai import AIService
+from app.services.analysis import AnalysisService, seed_default_analysis_prompts, serialize_analysis_run
 from app.services.auth import (
     OAUTH_STATE_COOKIE,
     SESSION_COOKIE,
@@ -388,6 +392,53 @@ def get_document(document_id: int, db: Session = Depends(get_db)) -> Document:
 @router.post("/search", response_model=list[SearchResult])
 async def search(payload: SearchRequest, db: Session = Depends(get_db)) -> list[dict]:
     return await semantic_search(db, payload.query, payload.website_id, payload.limit)
+
+
+@router.get("/analysis-prompts", response_model=list[AnalysisPromptRead])
+def list_analysis_prompts(db: Session = Depends(get_db)) -> list[AnalysisPrompt]:
+    seed_default_analysis_prompts(db)
+    return db.query(AnalysisPrompt).order_by(AnalysisPrompt.sort_order, AnalysisPrompt.prompt_id).all()
+
+
+@router.get("/analysis-prompts/{prompt_id}", response_model=AnalysisPromptRead)
+def get_analysis_prompt(prompt_id: str, db: Session = Depends(get_db)) -> AnalysisPrompt:
+    seed_default_analysis_prompts(db)
+    prompt = db.get(AnalysisPrompt, prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Analysis prompt not found")
+    return prompt
+
+
+@router.put("/analysis-prompts/{prompt_id}", response_model=AnalysisPromptRead)
+def update_analysis_prompt(prompt_id: str, payload: AnalysisPromptUpdate, db: Session = Depends(get_db)) -> AnalysisPrompt:
+    seed_default_analysis_prompts(db)
+    prompt = db.get(AnalysisPrompt, prompt_id)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Analysis prompt not found")
+    prompt.prompt_text = payload.prompt_text
+    prompt.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(prompt)
+    return prompt
+
+
+@router.post("/websites/{website_id}/analyses", response_model=AnalysisRunRead)
+async def create_analysis(website_id: int, db: Session = Depends(get_db)) -> dict:
+    return serialize_analysis_run(await AnalysisService(db).run_company_analysis(website_id))
+
+
+@router.get("/websites/{website_id}/analyses", response_model=list[AnalysisRunRead])
+def list_analyses(website_id: int, db: Session = Depends(get_db)) -> list[dict]:
+    runs = db.query(AnalysisRun).filter(AnalysisRun.website_id == website_id).order_by(AnalysisRun.created_at.desc()).all()
+    return [serialize_analysis_run(run) for run in runs]
+
+
+@router.get("/analyses/{analysis_id}", response_model=AnalysisRunRead)
+def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
+    run = db.get(AnalysisRun, analysis_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    return serialize_analysis_run(run)
 
 
 @router.get("/models", response_model=list[ModelConfigRead])

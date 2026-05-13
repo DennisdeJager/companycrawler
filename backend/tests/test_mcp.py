@@ -26,7 +26,18 @@ async def test_mcp_tools_list_includes_json_schemas_and_annotations() -> None:
 
     tools = response["result"]["tools"]
     tool_names = {tool["name"] for tool in tools}
-    assert {"list_websites", "start_scan", "get_scan_status", "search_company_data", "get_company_profile"} <= tool_names
+    assert {
+        "list_websites",
+        "start_scan",
+        "get_scan_status",
+        "search_company_data",
+        "get_company_profile",
+        "list_analysis_prompts",
+        "run_company_analysis",
+        "get_company_analysis",
+        "generate_company_scenarios",
+        "generate_poc_brief",
+    } <= tool_names
     assert all("inputSchema" in tool for tool in tools)
     assert all("annotations" in tool for tool in tools)
 

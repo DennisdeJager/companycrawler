@@ -106,6 +106,76 @@ class ContentChunk(Base):
     document: Mapped[Document] = relationship(back_populates="chunks")
 
 
+class AnalysisPrompt(Base):
+    __tablename__ = "analysis_prompts"
+
+    prompt_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    description: Mapped[str] = mapped_column(String(512), default="")
+    prompt_text: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    is_system_prompt: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AnalysisRun(Base):
+    __tablename__ = "analysis_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(64), default="queued", index=True)
+    model: Mapped[str] = mapped_column(String(255), default="")
+    extracted_variables: Mapped[str] = mapped_column(Text, default="{}")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    website: Mapped[Website] = relationship()
+    job_results: Mapped[list["AnalysisJobResult"]] = relationship(back_populates="analysis_run", cascade="all, delete-orphan")
+    insights: Mapped[list["AnalysisInsight"]] = relationship(back_populates="analysis_run", cascade="all, delete-orphan")
+
+
+class AnalysisJobResult(Base):
+    __tablename__ = "analysis_job_results"
+    __table_args__ = (UniqueConstraint("analysis_run_id", "prompt_id", name="uq_analysis_job_run_prompt"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    analysis_run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id", ondelete="CASCADE"), index=True)
+    prompt_id: Mapped[str] = mapped_column(ForeignKey("analysis_prompts.prompt_id", ondelete="RESTRICT"), index=True)
+    rendered_prompt: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(64), default="queued", index=True)
+    result_text: Mapped[str] = mapped_column(Text, default="")
+    result_json: Mapped[str] = mapped_column(Text, default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    sources: Mapped[str] = mapped_column(Text, default="[]")
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    analysis_run: Mapped[AnalysisRun] = relationship(back_populates="job_results")
+    prompt: Mapped[AnalysisPrompt] = relationship()
+
+
+class AnalysisInsight(Base):
+    __tablename__ = "analysis_insights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    analysis_run_id: Mapped[int] = mapped_column(ForeignKey("analysis_runs.id", ondelete="CASCADE"), index=True)
+    website_id: Mapped[int] = mapped_column(ForeignKey("websites.id", ondelete="CASCADE"), index=True)
+    prompt_id: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    text: Mapped[str] = mapped_column(Text, default="")
+    evidence_level: Mapped[str] = mapped_column(String(64), default="")
+    sources: Mapped[str] = mapped_column(Text, default="[]")
+    embedding_vector: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    embedding: Mapped[str] = mapped_column(Text, default="[]")
+    embedding_model: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    analysis_run: Mapped[AnalysisRun] = relationship(back_populates="insights")
+
+
 class ModelConfig(Base):
     __tablename__ = "model_configs"
 
