@@ -151,7 +151,14 @@ def manifest() -> dict:
 
 @router.post("")
 async def json_rpc(request: Request, db: Session = Depends(get_db)) -> dict | None:
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32700, "message": "Parse error: invalid JSON"},
+        }
     if isinstance(payload, list):
         responses = [await _json_rpc_response(item, db) for item in payload]
         return [response for response in responses if response is not None]

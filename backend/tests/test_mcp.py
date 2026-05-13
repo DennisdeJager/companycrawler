@@ -51,3 +51,18 @@ async def test_mcp_tools_call_returns_structured_content(monkeypatch) -> None:
     result = response["result"]
     assert result["structuredContent"]["websites"][0]["company_name"] == "Example"
     assert result["content"][0]["type"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_mcp_json_rpc_returns_parse_error_for_invalid_json() -> None:
+    class BadJsonRequest:
+        async def json(self):
+            raise mcp.json.JSONDecodeError("Invalid escape", "{}", 0)
+
+    response = await mcp.json_rpc(BadJsonRequest(), db=None)
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": None,
+        "error": {"code": -32700, "message": "Parse error: invalid JSON"},
+    }

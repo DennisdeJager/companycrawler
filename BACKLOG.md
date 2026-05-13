@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] MCP JSON-RPC endpoint geeft nu een nette parse error terug bij malformed JSON.
 - [x] MCP semantische zoekopdracht gerepareerd door de SQLAlchemy join expliciet te maken.
 - [x] Knowledge Graph mindmap vervangen door inklapbare, sleepbare en zoombare website explorer.
 - [x] Mailto-links uit crawls geweerd, duplicate graph nodes op content-hash samengevoegd en content inspector scrollbaar gemaakt.
