@@ -15,7 +15,7 @@ docker compose up --build -d
       "user": "root",
       "remotePath": "/opt/capps/apps/companycrawler",
       "composeFile": "docker-compose.yml",
-      "services": ["db", "api", "worker", "frontend"],
+      "services": ["db", "api", "worker", "web"],
       "postDeployWaitSeconds": 25,
       "healthUrls": ["http://192.168.10.12:8080/api/health"],
       "readyUrls": ["http://192.168.10.12:8080/mcp"],
@@ -29,7 +29,7 @@ Services:
 
 - `api`: FastAPI op poort `8000`
 - `worker`: achtergrondverwerker voor scans
-- `frontend`: nginx met React build op poort `8080`
+- `web`: nginx met React build op poort `8080` of `WEB_PORT`
 - `db`: PostgreSQL met pgvector
 
 ## Caddy mapping

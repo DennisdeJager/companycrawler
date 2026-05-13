@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "appId": "companycrawler",
+  "displayName": "Companycrawler",
+  "repo": "DennisdeJager/companycrawler",
+  "services": {
+    "web": {
+      "type": "web",
+      "internalPort": 80,
+      "public": true,
+      "healthPath": "/"
+    },
+    "api": {
+      "type": "api",
+      "internalPort": 8000,
+      "public": false,
+      "healthPath": "/api/health"
+    },
+    "postgres": {
+      "type": "postgres",
+      "public": false
+    },
+    "worker": {
+      "type": "worker",
+      "public": false
+    }
+  },
+  "requiredVariables": [
+    "APP_ENV",
+    "DATABASE_URL"
+  ],
+  "requiredSecrets": [
+    {
+      "name": "OPENAI_API_KEY",
+      "scope": "environment"
+    },
+    {
+      "name": "OPENROUTER_API_KEY",
+      "scope": "environment"
+    }
+  ],
+  "dependencies": []
+}

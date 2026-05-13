@@ -7,6 +7,7 @@
 - [x] FastAPI REST, MCP manifest en OpenAPI docs toegevoegd.
 - [x] React webconsole toegevoegd volgens goedgekeurde UI-richting.
 - [x] Docker compose deployment toegevoegd.
+- [x] ALM manifest en compose webservice-naam toegevoegd.
 
 ## Next
 
