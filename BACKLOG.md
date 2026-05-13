@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Nieuwe Smawa logo's per thema toegevoegd en linker menubalk op `#0f1722` gezet.
 - [x] Smawa woordmerk in sidebar en login groter gemaakt voor betere leesbaarheid.
 - [x] Settings modeldropdown verbreed, pagina-hoog gemaakt en clipping/z-index opgelost.
 - [x] Smawa woordmerk als transparante frontend asset toegevoegd en gebruikt voor de app branding.

@@ -34,7 +34,8 @@ import {
   Users,
   X
 } from 'lucide-react'
-import smawaLogoFull from './assets/smawa-logo-full-transparent.png'
+import smawaLogoDark from './assets/smawa-logo-background-0f1722.png'
+import smawaLogoLight from './assets/smawa-logo-background-white.png'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
@@ -426,7 +427,7 @@ function App() {
       <main className="guest-shell">
         <BuildInfo />
         <section className="guest-panel">
-          <div className="guest-logo"><SmawaMark /></div>
+          <div className="guest-logo"><SmawaMark theme="light" /></div>
           <ShieldCheck size={26} />
           <h1>{settings.google_auth_enabled ? 'Inloggen met Google' : 'Google login niet geconfigureerd'}</h1>
           <p>{settings.google_auth_enabled ? 'Gebruik je Google account om toegang tot companycrawler aan te vragen.' : 'Configureer GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET in de omgeving om de eerste Google gebruiker admin te maken.'}</p>
@@ -442,7 +443,7 @@ function App() {
       <main className="guest-shell">
         <BuildInfo />
         <section className="guest-panel">
-          <div className="guest-logo"><SmawaMark /></div>
+          <div className="guest-logo"><SmawaMark theme="light" /></div>
           <ShieldCheck size={26} />
           <h1>Je account wacht op goedkeuring</h1>
           <p>Je Google login is geregistreerd. Een beheerder moet je nog de rol gebruiker of beheerder geven.</p>
@@ -456,7 +457,7 @@ function App() {
       <BuildInfo />
       <aside className="sidebar">
         <div className="brand">
-          <SmawaMark />
+          <SmawaMark theme={theme} />
         </div>
         <nav>
           {nav.map(({ label, icon: Icon }) => (
@@ -630,8 +631,8 @@ function formatBuildTime(value: string) {
   })
 }
 
-function SmawaMark() {
-  return <img className="smawa-mark" src={smawaLogoFull} alt="Smawa" />
+function SmawaMark({ theme }: { theme: 'light' | 'dark' }) {
+  return <img className="smawa-mark" src={theme === 'dark' ? smawaLogoDark : smawaLogoLight} alt="Smawa" />
 }
 
 function secondsBetween(start?: string | null, end?: string | null) {
