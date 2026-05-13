@@ -23,7 +23,7 @@ import {
   Trash2,
   Users
 } from 'lucide-react'
-import { api, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
+import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
@@ -54,6 +54,10 @@ const emptySettings: ProviderSettings = {
   default_summary_model: 'gpt-5.4-mini',
   default_embedding_provider: 'openai',
   default_embedding_model: 'text-embedding-3-small',
+  scan_max_items: 500,
+  scan_max_file_mb: 25,
+  scan_max_depth: 8,
+  scan_max_parallel_items: 4,
   warnings: []
 }
 
@@ -167,7 +171,22 @@ function App() {
 
   async function startScan() {
     const website = selectedWebsite?.url === formUrl && !editWebsiteId ? selectedWebsite : await saveWebsite()
-    setScan({ id: 0, website_id: website.id, status: 'queued', progress: 0, message: 'Scan wordt gestart...', items_found: 0, items_processed: 0, error: '', created_at: new Date().toISOString() })
+    setScan({
+      id: 0,
+      website_id: website.id,
+      status: 'queued',
+      progress: 0,
+      message: 'Scan wordt gestart...',
+      items_found: 0,
+      items_processed: 0,
+      error: '',
+      created_at: new Date().toISOString(),
+      started_at: null,
+      completed_at: null,
+      duration_seconds: 0,
+      normal_db_size_mb: 0,
+      vector_db_size_mb: 0
+    })
     setView('Dashboard')
     const created = await api.startScan(website.id)
     setScan(created)
@@ -271,7 +290,7 @@ function App() {
         )}
 
         {view === 'Scans' && <ScansView activeModel={activeModel} message={message} scan={scan} startScan={startScan} />}
-        {view === 'Knowledge Graph' && <KnowledgeView documents={documents} selectedDocument={selectedDocument} setSelectedDocument={setSelectedDocument} />}
+        {view === 'Knowledge Graph' && <KnowledgeView documents={documents} selectedDocument={selectedDocument} selectedWebsite={selectedWebsite} setSelectedDocument={setSelectedDocument} />}
         {view === 'API Docs' && <DocsView />}
         {view === 'MCP Server' && <McpView />}
         {view === 'AI Models' && <ModelsView models={models} refresh={async () => setModels(await api.refreshModels())} />}
@@ -316,8 +335,28 @@ function Dashboard(props: {
   )
 }
 
+function secondsBetween(start?: string | null, end?: string | null) {
+  if (!start) return 0
+  const started = new Date(start).getTime()
+  const ended = end ? new Date(end).getTime() : Date.now()
+  if (Number.isNaN(started) || Number.isNaN(ended)) return 0
+  return Math.max(0, Math.floor((ended - started) / 1000))
+}
+
+function formatDuration(totalSeconds: number) {
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return `${hours}u ${minutes}m ${seconds}s`
+}
+
+function formatMb(value: number) {
+  return `${value.toFixed(2)} MB`
+}
+
 function ProgressPanel({ scan, documents, message }: { scan: Scan | null; documents: DocumentItem[]; message: string }) {
   const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
+  const elapsedSeconds = scan ? scan.duration_seconds || secondsBetween(scan.started_at ?? scan.created_at, scan.completed_at) : 0
   return (
     <div className="panel progress-panel">
       <div className="panel-title"><Activity size={18} /> Realtime scan voortgang</div>
@@ -329,6 +368,9 @@ function ProgressPanel({ scan, documents, message }: { scan: Scan | null; docume
         <dt>Items gevonden</dt><dd>{scan?.items_found ?? documents.length}</dd>
         <dt>Items verwerkt</dt><dd>{scan?.items_processed ?? documents.length}</dd>
         <dt>Vectorstatus</dt><dd>{documents.filter((doc) => doc.vector_status === 'ready').length}/{documents.length} klaar</dd>
+        <dt>Looptijd</dt><dd>{formatDuration(elapsedSeconds)}</dd>
+        <dt>Normale DB</dt><dd>{formatMb(scan?.normal_db_size_mb ?? 0)}</dd>
+        <dt>Vector DB</dt><dd>{formatMb(scan?.vector_db_size_mb ?? 0)}</dd>
       </dl>
     </div>
   )
@@ -351,7 +393,8 @@ function TreePanel({ documents, selectedDocument, setSelectedDocument }: { docum
   )
 }
 
-function Inspector({ document, website }: { document: DocumentItem | null; website: Website | null }) {
+function Inspector({ document, website }: { document: (DocumentItem | DocumentDetail) | null; website: Website | null }) {
+  const fullText = document && 'text_content' in document ? document.text_content : ''
   return (
     <div className="panel inspector-panel">
       <div className="panel-title"><FileText size={18} /> Content inspector</div>
@@ -363,6 +406,12 @@ function Inspector({ document, website }: { document: DocumentItem | null; websi
         <dt>Type</dt><dd>{document?.content_type ?? '-'}</dd>
         <dt>Vector</dt><dd>{document?.vector_status ?? '-'}</dd>
       </dl>
+      {fullText && (
+        <div className="full-text-block">
+          <strong>Volledige tekst</strong>
+          <p>{fullText}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -447,13 +496,208 @@ function ScansView({ activeModel, message, scan, startScan }: { activeModel?: Mo
   )
 }
 
-function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: DocumentItem | null; setSelectedDocument: (doc: DocumentItem) => void }) {
+type MindNode = {
+  id: string
+  title: string
+  subtitle: string
+  x: number
+  y: number
+  width: number
+  height: number
+  document?: DocumentItem
+  kind: 'root' | 'group' | 'document'
+}
+
+type MindEdge = {
+  from: MindNode
+  to: MindNode
+}
+
+function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: DocumentItem | null; selectedWebsite: Website | null; setSelectedDocument: (doc: DocumentItem) => void }) {
+  const [detail, setDetail] = useState<DocumentDetail | null>(null)
+  const graph = useMemo(() => buildMindmap(props.documents, props.selectedWebsite), [props.documents, props.selectedWebsite])
+
+  useEffect(() => {
+    if (!props.selectedDocument?.id) return
+    let cancelled = false
+    api.document(props.selectedDocument.id)
+      .then((document) => {
+        if (!cancelled) setDetail(document)
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [props.selectedDocument?.id])
+
   return (
-    <section className="dashboard-layout">
-      <TreePanel {...props} />
-      <Inspector document={props.selectedDocument} website={null} />
+    <section className="knowledge-layout">
+      <div className="panel mindmap-panel">
+        <div className="panel-title"><Network size={18} /> Website mindmap</div>
+        <div className="mindmap-canvas" style={{ width: graph.width, height: graph.height }}>
+          <svg className="mindmap-lines" width={graph.width} height={graph.height} aria-hidden="true">
+            {graph.edges.map((edge) => (
+              <path
+                key={`${edge.from.id}-${edge.to.id}`}
+                d={connectorPath(edge.from, edge.to)}
+                fill="none"
+              />
+            ))}
+          </svg>
+          {graph.nodes.map((node) => (
+            <button
+              className={[
+                'mind-node',
+                `mind-node-${node.kind}`,
+                node.document && props.selectedDocument?.id === node.document.id ? 'selected' : ''
+              ].filter(Boolean).join(' ')}
+              key={node.id}
+              style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
+              onClick={() => node.document && props.setSelectedDocument(node.document)}
+              disabled={!node.document}
+              title={node.document?.source_url || node.title}
+            >
+              <strong>{node.title}</strong>
+              <small>{node.subtitle}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+      <Inspector document={detail?.id === props.selectedDocument?.id ? detail : props.selectedDocument} website={props.selectedWebsite} />
     </section>
   )
+}
+
+function buildMindmap(documents: DocumentItem[], website: Website | null) {
+  const uniqueDocs = uniqueDocuments(documents)
+  const grouped = new Map<string, DocumentItem[]>()
+  for (const document of uniqueDocs) {
+    const segment = firstPathSegment(document.source_url)
+    grouped.set(segment, [...(grouped.get(segment) ?? []), document])
+  }
+
+  const groupEntries = Array.from(grouped.entries()).sort(([left], [right]) => left.localeCompare(right))
+  const nodeWidth = 230
+  const nodeHeight = 70
+  const groupWidth = 210
+  const gap = 16
+  const groupGap = 34
+  const left = 24
+  const groupX = 300
+  const documentX = 560
+  let cursorY = 22
+  const nodes: MindNode[] = []
+  const edges: MindEdge[] = []
+  const groupNodes: MindNode[] = []
+  const docNodes: MindNode[] = []
+
+  for (const [groupName, docs] of groupEntries) {
+    const sortedDocs = docs.sort((leftDoc, rightDoc) => leftDoc.source_url.localeCompare(rightDoc.source_url))
+    const groupStart = cursorY
+    for (const document of sortedDocs) {
+      const node: MindNode = {
+        id: `doc-${document.id}`,
+        title: compactTitle(document.title || lastPathSegment(document.source_url)),
+        subtitle: compactTitle(document.display_summary || document.summary || document.source_url, 74),
+        x: documentX,
+        y: cursorY,
+        width: nodeWidth,
+        height: nodeHeight,
+        document,
+        kind: 'document'
+      }
+      docNodes.push(node)
+      cursorY += nodeHeight + gap
+    }
+    const groupHeight = Math.max(nodeHeight, sortedDocs.length * (nodeHeight + gap) - gap)
+    const groupNode: MindNode = {
+      id: `group-${groupName}`,
+      title: groupName,
+      subtitle: `${sortedDocs.length} item${sortedDocs.length === 1 ? '' : 's'}`,
+      x: groupX,
+      y: groupStart + (groupHeight - nodeHeight) / 2,
+      width: groupWidth,
+      height: nodeHeight,
+      kind: 'group'
+    }
+    groupNodes.push(groupNode)
+    for (const documentNode of docNodes.slice(-sortedDocs.length)) {
+      edges.push({ from: groupNode, to: documentNode })
+    }
+    cursorY += groupGap
+  }
+
+  const height = Math.max(360, cursorY + 20)
+  const rootNode: MindNode = {
+    id: 'root',
+    title: compactTitle(website?.company_name || 'Website'),
+    subtitle: uniqueDocs.length ? `${uniqueDocs.length} unieke items` : 'Geen crawl-data',
+    x: left,
+    y: Math.max(22, height / 2 - nodeHeight / 2),
+    width: 220,
+    height: nodeHeight,
+    kind: 'root'
+  }
+  nodes.push(rootNode, ...groupNodes, ...docNodes)
+  for (const groupNode of groupNodes) edges.push({ from: rootNode, to: groupNode })
+  return { nodes, edges, width: 840, height }
+}
+
+function uniqueDocuments(documents: DocumentItem[]) {
+  const byUrl = new Map<string, DocumentItem>()
+  for (const document of documents) {
+    const key = canonicalFrontendUrl(document.source_url)
+    if (!byUrl.has(key)) byUrl.set(key, document)
+  }
+  return Array.from(byUrl.values())
+}
+
+function canonicalFrontendUrl(value: string) {
+  try {
+    const parsed = new URL(value)
+    parsed.hash = ''
+    parsed.hostname = parsed.hostname.replace(/^www\./, '').toLowerCase()
+    if (parsed.pathname === '/') parsed.pathname = ''
+    return parsed.toString()
+  } catch {
+    return value
+  }
+}
+
+function firstPathSegment(value: string) {
+  try {
+    const parsed = new URL(value)
+    const segment = parsed.pathname.split('/').filter(Boolean)[0]
+    return segment ? segment.replace(/[-_]+/g, ' ') : 'Home'
+  } catch {
+    return 'Overig'
+  }
+}
+
+function lastPathSegment(value: string) {
+  try {
+    const parsed = new URL(value)
+    const segments = parsed.pathname.split('/').filter(Boolean)
+    return segments[segments.length - 1]?.replace(/[-_]+/g, ' ') || parsed.hostname
+  } catch {
+    return value
+  }
+}
+
+function compactTitle(value: string, max = 52) {
+  const clean = value.replace(/\s+/g, ' ').trim()
+  return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean
+}
+
+function connectorPath(from: MindNode, to: MindNode) {
+  const startX = from.x + from.width
+  const startY = from.y + from.height / 2
+  const endX = to.x
+  const endY = to.y + to.height / 2
+  const mid = Math.max(40, (endX - startX) / 2)
+  return `M ${startX} ${startY} C ${startX + mid} ${startY}, ${endX - mid} ${endY}, ${endX} ${endY}`
 }
 
 function DocsView() {
@@ -533,6 +777,10 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
   const [googleClientSecret, setGoogleClientSecret] = useState('')
   const [summaryModel, setSummaryModel] = useState(settings.default_summary_model)
   const [embeddingModel, setEmbeddingModel] = useState(settings.default_embedding_model)
+  const [scanMaxItems, setScanMaxItems] = useState(settings.scan_max_items)
+  const [scanMaxFileMb, setScanMaxFileMb] = useState(settings.scan_max_file_mb)
+  const [scanMaxDepth, setScanMaxDepth] = useState(settings.scan_max_depth)
+  const [scanMaxParallelItems, setScanMaxParallelItems] = useState(settings.scan_max_parallel_items)
 
   async function save() {
     const saved = await api.saveProviderSettings({
@@ -543,7 +791,11 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
       default_summary_provider: settings.default_summary_provider,
       default_summary_model: summaryModel,
       default_embedding_provider: settings.default_embedding_provider,
-      default_embedding_model: embeddingModel
+      default_embedding_model: embeddingModel,
+      scan_max_items: scanMaxItems,
+      scan_max_file_mb: scanMaxFileMb,
+      scan_max_depth: scanMaxDepth,
+      scan_max_parallel_items: scanMaxParallelItems
     })
     setSettings(saved)
     setOpenaiKey('')
@@ -578,8 +830,45 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
         <label>Google Client Secret</label>
         <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Vereist voor server-side redirect login'} />
         <p className="body-text">De backend wisselt de Google authorization code om voor een ID token en zet daarna een sessiecookie. Secrets worden alleen in .env opgeslagen en niet teruggetoond.</p>
+        <div className="settings-divider" />
+        <div className="panel-title"><Network size={18} /> Crawl instellingen</div>
+        <NumberSetting
+          label="Max items"
+          value={scanMaxItems}
+          setValue={setScanMaxItems}
+          help="Maximum aantal unieke URL's of documenten dat een scan verwerkt. Hoger geeft completere scans, maar duurt langer."
+        />
+        <NumberSetting
+          label="Max file MB"
+          value={scanMaxFileMb}
+          setValue={setScanMaxFileMb}
+          help="Maximale grootte van een bestand dat wordt gedownload. Grotere PDF's of documenten worden overgeslagen."
+        />
+        <NumberSetting
+          label="Max depth"
+          value={scanMaxDepth}
+          setValue={setScanMaxDepth}
+          help="Maximale klikdiepte vanaf de startpagina. Diepte 1 zijn links op de homepage, diepte 2 links daarvandaan."
+        />
+        <NumberSetting
+          label="Parallel items"
+          value={scanMaxParallelItems}
+          setValue={setScanMaxParallelItems}
+          help="Aantal pagina's of bestanden dat tegelijk wordt opgehaald, samengevat en gevectoriseerd."
+        />
+        <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
       </div>
     </section>
+  )
+}
+
+function NumberSetting({ label, value, setValue, help }: { label: string; value: number; setValue: (value: number) => void; help: string }) {
+  return (
+    <div className="number-setting">
+      <label>{label}</label>
+      <input type="number" min={1} value={value} onChange={(event) => setValue(Math.max(1, Number(event.target.value) || 1))} />
+      <small>{help}</small>
+    </div>
   )
 }
 

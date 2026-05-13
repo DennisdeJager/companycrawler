@@ -12,8 +12,10 @@ import httpx
 from bs4 import BeautifulSoup
 from docx import Document as DocxDocument
 from pypdf import PdfReader
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.database import SessionLocal
 from app.core.config import get_settings
 from app.models import ContentChunk, Document, ScanJob, Website
 from app.models.entities import ScanStatus
@@ -32,6 +34,16 @@ class FetchedContent:
     links: list[str]
     file_name: str = ""
     content: bytes = b""
+
+
+@dataclass
+class ProcessedContent:
+    requested_url: str
+    final_url: str
+    depth: int
+    links: list[str]
+    stored: bool = False
+    error: str = ""
 
 
 class CompanyCrawler:
@@ -75,53 +87,85 @@ class CompanyCrawler:
             self.db.commit()
 
     async def _crawl_website(self, website: Website, scan: ScanJob) -> None:
-        root = self._normalize_url(website.url)
+        root = self._canonical_url(website.url)
         root_host = self._canonical_host(root)
         queue: list[tuple[str, int]] = [(root, 0)]
         seen: set[str] = set()
+        queued: set[str] = {root}
         failed_urls: list[str] = []
+        in_flight: set[asyncio.Task[ProcessedContent]] = set()
+        max_parallel = max(1, self.settings.scan_max_parallel_items)
+        semaphore = asyncio.Semaphore(max_parallel)
 
         async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
-            while queue and len(seen) < self.settings.scan_max_items:
-                current, depth = queue.pop(0)
-                if current in seen or depth > self.settings.scan_max_depth:
-                    continue
-                seen.add(current)
+            while (queue or in_flight) and len(seen) < self.settings.scan_max_items:
+                while queue and len(in_flight) < max_parallel and len(seen) + len(in_flight) < self.settings.scan_max_items:
+                    current, depth = queue.pop(0)
+                    if current in seen or depth > self.settings.scan_max_depth:
+                        continue
+                    seen.add(current)
+                    in_flight.add(asyncio.create_task(self._process_url(semaphore, client, website.id, scan.id, current, depth)))
+
+                self.db.refresh(scan)
                 scan.items_found = max(scan.items_found, len(seen) + len(queue))
-                scan.message = f"Verwerkt {len(seen)} items"
+                scan.message = f"Verwerkt {scan.items_processed} van {len(seen)} items"
                 scan.progress = min(95, int((len(seen) / self.settings.scan_max_items) * 100))
                 self.db.commit()
 
-                try:
-                    if not await self._allowed_by_robots(client, current):
-                        continue
-                    fetched = await self._fetch(client, current)
-                    if not fetched or not fetched.text.strip():
-                        continue
-                    final_url = self._normalize_url(fetched.url)
-                    seen.add(final_url)
-                    await self._store_document(website, scan, fetched)
+                if not in_flight:
+                    continue
 
-                    for link in fetched.links:
-                        normalized = self._normalize_url(link)
+                done, in_flight = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    result = task.result()
+                    final_url = self._canonical_url(result.final_url)
+                    seen.add(final_url)
+
+                    if result.error:
+                        failed_urls.append(f"{result.requested_url}: {result.error}")
+                        scan.error = "\n".join(failed_urls[:10])
+                        scan.message = f"Verwerkt {scan.items_processed} items, {len(failed_urls)} overgeslagen"
+                        self.db.commit()
+                        continue
+
+                    for link in result.links:
+                        normalized = self._canonical_url(link)
                         parsed = urlparse(normalized)
                         if parsed.scheme not in {"http", "https"}:
                             continue
                         if self._canonical_host(normalized) != root_host:
                             continue
-                        if normalized not in seen and len(seen) + len(queue) < self.settings.scan_max_items:
-                            queue.append((normalized, depth + 1))
-                except Exception as exc:
-                    self.db.rollback()
-                    failed_urls.append(f"{current}: {exc}")
-                    scan.error = "\n".join(failed_urls[:10])
-                    scan.message = f"Verwerkt {len(seen)} items, {len(failed_urls)} overgeslagen"
-                    self.db.commit()
+                        if result.depth + 1 > self.settings.scan_max_depth:
+                            continue
+                        if normalized in seen or normalized in queued:
+                            continue
+                        if len(seen) + len(queue) + len(in_flight) >= self.settings.scan_max_items:
+                            continue
+                        queue.append((normalized, result.depth + 1))
+                        queued.add(normalized)
 
         if failed_urls:
             scan.error = "\n".join(failed_urls[:10])
             scan.message = f"Scan afgerond met {len(failed_urls)} overgeslagen URL(s)"
             self.db.commit()
+
+    async def _process_url(self, semaphore: asyncio.Semaphore, client: httpx.AsyncClient, website_id: int, scan_id: int, url: str, depth: int) -> ProcessedContent:
+        db = SessionLocal()
+        try:
+            async with semaphore:
+                if not await self._allowed_by_robots(client, url):
+                    return ProcessedContent(url, url, depth, [])
+                fetched = await self._fetch(client, url)
+                if not fetched or not fetched.text.strip():
+                    return ProcessedContent(url, url, depth, [])
+                fetched.url = self._canonical_url(fetched.url)
+                await self._store_document(db, website_id, scan_id, fetched)
+                return ProcessedContent(url, fetched.url, depth, fetched.links, stored=True)
+        except Exception as exc:
+            db.rollback()
+            return ProcessedContent(url, url, depth, [], error=str(exc))
+        finally:
+            db.close()
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> FetchedContent | None:
         response = await client.get(url, headers={"User-Agent": "companycrawler/1.0 public marketing crawler"})
@@ -156,32 +200,51 @@ class CompanyCrawler:
             return "\n".join(paragraph.text for paragraph in doc.paragraphs)
         return content.decode("utf-8", errors="ignore")
 
-    async def _store_document(self, website: Website, scan: ScanJob, fetched: FetchedContent) -> None:
-        summary, display_summary = await self.ai.summarize(fetched.title, fetched.text)
+    async def _store_document(self, db: Session, website_id: int, scan_id: int, fetched: FetchedContent) -> None:
+        ai = AIService(db)
+        summary, display_summary = await ai.summarize(fetched.title, fetched.text)
         document = (
-            self.db.query(Document)
-            .filter(Document.website_id == website.id, Document.source_url == fetched.url)
+            db.query(Document)
+            .filter(Document.website_id == website_id, Document.source_url == fetched.url)
             .first()
         )
         if not document:
-            document = Document(website_id=website.id, source_url=fetched.url)
-            self.db.add(document)
-        document.scan_id = scan.id
+            document = Document(website_id=website_id, source_url=fetched.url)
+            db.add(document)
+        document.scan_id = scan_id
         document.title = fetched.title[:512]
         document.content_type = fetched.content_type[:128]
         document.file_name = fetched.file_name[:255]
-        document.storage_path = self._store_file_bytes(website.id, fetched) if fetched.file_name else ""
+        document.storage_path = self._store_file_bytes(website_id, fetched) if fetched.file_name else ""
         document.text_content = fetched.text
         document.summary = summary
         document.display_summary = display_summary[:280]
         document.vector_status = "processing"
-        self.db.commit()
-        self.db.refresh(document)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            document = (
+                db.query(Document)
+                .filter(Document.website_id == website_id, Document.source_url == fetched.url)
+                .one()
+            )
+            document.scan_id = scan_id
+            document.title = fetched.title[:512]
+            document.content_type = fetched.content_type[:128]
+            document.file_name = fetched.file_name[:255]
+            document.storage_path = self._store_file_bytes(website_id, fetched) if fetched.file_name else ""
+            document.text_content = fetched.text
+            document.summary = summary
+            document.display_summary = display_summary[:280]
+            document.vector_status = "processing"
+            db.commit()
+        db.refresh(document)
 
-        self.db.query(ContentChunk).filter(ContentChunk.document_id == document.id).delete()
+        db.query(ContentChunk).filter(ContentChunk.document_id == document.id).delete()
         for index, chunk_text in enumerate(self._chunk_text(fetched.text)):
-            embedding = await self.ai.embed(chunk_text)
-            self.db.add(
+            embedding = await ai.embed(chunk_text)
+            db.add(
                 ContentChunk(
                     document_id=document.id,
                     chunk_index=index,
@@ -193,8 +256,10 @@ class CompanyCrawler:
                 )
             )
         document.vector_status = "ready"
-        scan.items_processed += 1
-        self.db.commit()
+        scan = db.get(ScanJob, scan_id)
+        if scan:
+            scan.items_processed += 1
+        db.commit()
         await asyncio.sleep(0)
 
     def _chunk_text(self, text: str, size: int = 1200, overlap: int = 160) -> list[str]:
@@ -215,6 +280,15 @@ class CompanyCrawler:
         parsed = urlsplit(clean)
         path = "" if parsed.path == "/" else parsed.path
         return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
+
+    def _canonical_url(self, url: str) -> str:
+        normalized = self._normalize_url(url)
+        parsed = urlsplit(normalized)
+        scheme = parsed.scheme.lower()
+        netloc = parsed.netloc.lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        return urlunsplit((scheme, netloc, parsed.path, parsed.query, ""))
 
     def _canonical_host(self, url: str) -> str:
         host = urlparse(url).hostname or ""

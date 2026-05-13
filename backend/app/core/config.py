@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     scan_max_items: int = 500
     scan_max_file_mb: int = 25
     scan_max_depth: int = 8
+    scan_max_parallel_items: int = 4
 
 
 @lru_cache

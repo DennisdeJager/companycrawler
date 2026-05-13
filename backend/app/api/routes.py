@@ -1,10 +1,13 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import RedirectResponse
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models import Document, ModelConfig, ScanJob, User, Website
+from app.models import ContentChunk, Document, ModelConfig, ScanJob, User, Website
 from app.models.entities import UserRole
 from app.schemas.dto import (
     DocumentDetail,
@@ -40,6 +43,108 @@ from app.services.settings_store import SECRET_KEYS, provider_status, set_settin
 router = APIRouter(prefix="/api")
 
 
+def _bytes_to_mb(size: int | float | None) -> float:
+    return round(float(size or 0) / (1024 * 1024), 2)
+
+
+def _scan_duration_seconds(scan: ScanJob) -> int:
+    if not scan.started_at:
+        return 0
+    end = scan.completed_at or datetime.utcnow()
+    return max(0, int((end - scan.started_at).total_seconds()))
+
+
+def _website_storage_sizes(db: Session, website_id: int) -> tuple[float, float]:
+    if db.bind and db.bind.dialect.name == "postgresql":
+        normal_bytes = db.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(
+                    COALESCE(pg_column_size(source_url), 0)
+                    + COALESCE(pg_column_size(title), 0)
+                    + COALESCE(pg_column_size(content_type), 0)
+                    + COALESCE(pg_column_size(file_name), 0)
+                    + COALESCE(pg_column_size(storage_path), 0)
+                    + COALESCE(pg_column_size(text_content), 0)
+                    + COALESCE(pg_column_size(summary), 0)
+                    + COALESCE(pg_column_size(display_summary), 0)
+                    + COALESCE(pg_column_size(vector_status), 0)
+                ), 0)
+                FROM documents
+                WHERE website_id = :website_id
+                """
+            ),
+            {"website_id": website_id},
+        ).scalar()
+        vector_bytes = db.execute(
+            text(
+                """
+                SELECT COALESCE(SUM(
+                    COALESCE(pg_column_size(content_chunks.text), 0)
+                    + COALESCE(pg_column_size(content_chunks.embedding), 0)
+                    + COALESCE(pg_column_size(content_chunks.embedding_vector), 0)
+                    + COALESCE(pg_column_size(content_chunks.embedding_model), 0)
+                ), 0)
+                FROM content_chunks
+                JOIN documents ON documents.id = content_chunks.document_id
+                WHERE documents.website_id = :website_id
+                """
+            ),
+            {"website_id": website_id},
+        ).scalar()
+        return _bytes_to_mb(normal_bytes), _bytes_to_mb(vector_bytes)
+
+    documents = db.query(Document).filter(Document.website_id == website_id).all()
+    normal_bytes = sum(
+        len(
+            "".join(
+                [
+                    doc.source_url,
+                    doc.title,
+                    doc.content_type,
+                    doc.file_name,
+                    doc.storage_path,
+                    doc.text_content,
+                    doc.summary,
+                    doc.display_summary,
+                    doc.vector_status,
+                ]
+            ).encode("utf-8")
+        )
+        for doc in documents
+    )
+    document_ids = [doc.id for doc in documents]
+    vector_bytes = 0
+    if document_ids:
+        chunks = db.query(ContentChunk).filter(ContentChunk.document_id.in_(document_ids)).all()
+        vector_bytes = sum(
+            len((chunk.text + chunk.embedding + chunk.embedding_model).encode("utf-8"))
+            + (len(chunk.embedding_vector or []) * 8)
+            for chunk in chunks
+        )
+    return _bytes_to_mb(normal_bytes), _bytes_to_mb(vector_bytes)
+
+
+def serialize_scan(db: Session, scan: ScanJob) -> dict:
+    normal_db_size_mb, vector_db_size_mb = _website_storage_sizes(db, scan.website_id)
+    return {
+        "id": scan.id,
+        "website_id": scan.website_id,
+        "status": scan.status.value if hasattr(scan.status, "value") else scan.status,
+        "progress": scan.progress,
+        "message": scan.message,
+        "items_found": scan.items_found,
+        "items_processed": scan.items_processed,
+        "error": scan.error,
+        "created_at": scan.created_at,
+        "started_at": scan.started_at,
+        "completed_at": scan.completed_at,
+        "duration_seconds": _scan_duration_seconds(scan),
+        "normal_db_size_mb": normal_db_size_mb,
+        "vector_db_size_mb": vector_db_size_mb,
+    }
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "app": get_settings().app_name}
@@ -56,9 +161,10 @@ def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depe
     for key, value in values.items():
         if value is None:
             continue
-        if key in SECRET_KEYS and value.strip() == "":
+        clean_value = str(value).strip()
+        if key in SECRET_KEYS and clean_value == "":
             continue
-        set_setting(db, key, value.strip(), key in SECRET_KEYS)
+        set_setting(db, key, clean_value, key in SECRET_KEYS)
     return provider_status(db)
 
 
@@ -200,7 +306,7 @@ async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[s
 
 
 @router.post("/scans", response_model=ScanRead)
-async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> ScanJob:
+async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> dict:
     website = db.get(Website, payload.website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
@@ -208,15 +314,15 @@ async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> Sca
     db.add(scan)
     db.commit()
     db.refresh(scan)
-    return scan
+    return serialize_scan(db, scan)
 
 
 @router.get("/scans/{scan_id}", response_model=ScanRead)
-def get_scan(scan_id: int, db: Session = Depends(get_db)) -> ScanJob:
+def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
-    return scan
+    return serialize_scan(db, scan)
 
 
 @router.get("/websites/{website_id}/documents", response_model=list[DocumentRead])

@@ -16,6 +16,11 @@ export type Scan = {
   items_processed: number
   error: string
   created_at: string
+  started_at: string | null
+  completed_at: string | null
+  duration_seconds: number
+  normal_db_size_mb: number
+  vector_db_size_mb: number
 }
 
 export type DocumentItem = {
@@ -30,6 +35,10 @@ export type DocumentItem = {
   display_summary: string
   vector_status: string
   created_at: string
+}
+
+export type DocumentDetail = DocumentItem & {
+  text_content: string
 }
 
 export type ModelConfig = {
@@ -66,6 +75,10 @@ export type ProviderSettings = {
   default_summary_model: string
   default_embedding_provider: string
   default_embedding_model: string
+  scan_max_items: number
+  scan_max_file_mb: number
+  scan_max_depth: number
+  scan_max_parallel_items: number
   warnings: string[]
 }
 
@@ -91,6 +104,7 @@ export const api = {
   startScan: (website_id: number) => request<Scan>('/api/scans', { method: 'POST', body: JSON.stringify({ website_id }) }),
   getScan: (id: number) => request<Scan>(`/api/scans/${id}`),
   documents: (websiteId: number) => request<DocumentItem[]>(`/api/websites/${websiteId}/documents`),
+  document: (id: number) => request<DocumentDetail>(`/api/documents/${id}`),
   models: () => request<ModelConfig[]>('/api/models'),
   refreshModels: () => request<ModelConfig[]>('/api/models/refresh', { method: 'POST' }),
   users: () => request<User[]>('/api/users'),

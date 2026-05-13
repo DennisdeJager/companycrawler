@@ -39,6 +39,11 @@ class ScanRead(BaseModel):
     items_processed: int
     error: str
     created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    duration_seconds: int = 0
+    normal_db_size_mb: float = 0
+    vector_db_size_mb: float = 0
 
 
 class DocumentRead(BaseModel):
@@ -119,6 +124,10 @@ class ProviderSettingsRead(BaseModel):
     default_summary_model: str
     default_embedding_provider: str
     default_embedding_model: str
+    scan_max_items: int
+    scan_max_file_mb: int
+    scan_max_depth: int
+    scan_max_parallel_items: int
     warnings: list[str]
 
 
@@ -131,3 +140,7 @@ class ProviderSettingsUpdate(BaseModel):
     default_summary_model: str | None = None
     default_embedding_provider: str | None = None
     default_embedding_model: str | None = None
+    scan_max_items: int | None = Field(default=None, ge=1)
+    scan_max_file_mb: int | None = Field(default=None, ge=1)
+    scan_max_depth: int | None = Field(default=None, ge=1)
+    scan_max_parallel_items: int | None = Field(default=None, ge=1)
