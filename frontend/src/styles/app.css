@@ -40,19 +40,14 @@ button, input, select, textarea { font: inherit; }
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-weight: 800;
-  font-size: 19px;
+  display: block;
   margin-bottom: 28px;
-  color: #0f6f71;
 }
 .smawa-mark {
-  width: 58px;
-  height: 58px;
+  display: block;
+  width: min(100%, 196px);
+  height: auto;
   filter: drop-shadow(0 8px 16px rgba(15, 139, 141, 0.16));
-  flex: 0 0 auto;
   object-fit: contain;
 }
 
@@ -1146,8 +1141,9 @@ button.compact {
   margin-bottom: 6px;
 }
 .guest-logo .smawa-mark {
-  width: 76px;
-  height: 76px;
+  width: min(320px, 100%);
+  height: auto;
+  margin: 0 auto;
 }
 .guest-panel .diagnostic-box {
   margin-top: 18px;
@@ -1172,7 +1168,9 @@ button.compact {
   color: #8bd5d5;
 }
 .theme-dark .smawa-mark {
-  filter: drop-shadow(0 0 18px rgba(88, 195, 196, 0.28));
+  filter:
+    drop-shadow(0 0 1px rgba(232, 238, 242, 0.45))
+    drop-shadow(0 0 18px rgba(88, 195, 196, 0.24));
 }
 .theme-dark .sidebar,
 .theme-dark .panel,

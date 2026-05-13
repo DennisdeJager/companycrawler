@@ -34,7 +34,7 @@ import {
   Users,
   X
 } from 'lucide-react'
-import smawaLogoSymbol from './assets/smawa-logo-symbol.png'
+import smawaLogoFull from './assets/smawa-logo-full-transparent.png'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
@@ -457,7 +457,6 @@ function App() {
       <aside className="sidebar">
         <div className="brand">
           <SmawaMark />
-          <span>companycrawler</span>
         </div>
         <nav>
           {nav.map(({ label, icon: Icon }) => (
@@ -632,7 +631,7 @@ function formatBuildTime(value: string) {
 }
 
 function SmawaMark() {
-  return <img className="smawa-mark" src={smawaLogoSymbol} alt="" aria-hidden="true" />
+  return <img className="smawa-mark" src={smawaLogoFull} alt="Smawa" />
 }
 
 function secondsBetween(start?: string | null, end?: string | null) {

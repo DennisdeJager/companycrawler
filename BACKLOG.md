@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Smawa woordmerk als transparante frontend asset toegevoegd en gebruikt voor de app branding.
 - [x] Modelselecties overzichtelijk gemaakt met zoekbare kolommen en gefilterde summary- en embeddingmodellen.
 - [x] AI Models uit de navigatie verwijderd en gebruikersbeheer uitgebreid met toevoegen, wijzigen en verwijderen via compacte modals.
 - [x] Settings uitgebreid met centrale modelselecties voor summary, embeddings en agent-analyse, inclusief aanbevolen modellen uit de AI-catalogus.
