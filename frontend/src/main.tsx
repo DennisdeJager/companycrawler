@@ -5,12 +5,12 @@ import {
   Activity,
   AlertTriangle,
   BookOpen,
-  Boxes,
   Cable,
   CheckCircle2,
   FileText,
   Globe2,
   KeyRound,
+  Moon,
   Network,
   Pencil,
   Play,
@@ -20,10 +20,12 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Sun,
   Trash2,
   Users
 } from 'lucide-react'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
+import smawaLogoSymbol from './assets/smawa-logo-symbol.png'
 import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
@@ -74,8 +76,10 @@ function App() {
   const [scan, setScan] = useState<Scan | null>(null)
   const [formUrl, setFormUrl] = useState('https://example.com')
   const [formCompany, setFormCompany] = useState('Example')
+  const [formLogoUrl, setFormLogoUrl] = useState('')
   const [editWebsiteId, setEditWebsiteId] = useState<number | null>(null)
   const [message, setMessage] = useState('Klaar om een website te scannen.')
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('companycrawler-theme') === 'dark' ? 'dark' : 'light')
 
   const activeModel = useMemo(() => models.find((model) => model.purpose === 'summary') ?? models[0], [models])
 
@@ -103,6 +107,7 @@ function App() {
     }
     setFormUrl(website.url)
     setFormCompany(website.company_name)
+    setFormLogoUrl(website.logo_url ?? '')
     const docRows = await api.documents(website.id)
     setDocuments(docRows)
     setSelectedDocument(docRows[0] ?? null)
@@ -147,6 +152,7 @@ function App() {
     try {
       const result = await api.detectCompanyName(formUrl)
       setFormCompany(result.company_name)
+      setFormLogoUrl(result.logo_url ?? '')
       setMessage('Bedrijfsnaam ingevuld op basis van de homepage.')
     } catch (error) {
       setMessage(`Detectie mislukt: ${String(error)}`)
@@ -155,14 +161,14 @@ function App() {
 
   async function saveWebsite() {
     if (editWebsiteId) {
-      const updated = await api.updateWebsite(editWebsiteId, { url: formUrl, company_name: formCompany })
+      const updated = await api.updateWebsite(editWebsiteId, { url: formUrl, company_name: formCompany, logo_url: formLogoUrl })
       setWebsites((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
       await selectWebsite(updated)
       setEditWebsiteId(null)
       setMessage('Website bijgewerkt.')
       return updated
     }
-    const created = await api.createWebsite(formUrl, formCompany)
+    const created = await api.createWebsite(formUrl, formCompany, formLogoUrl)
     setWebsites((rows) => [created, ...rows])
     await selectWebsite(created)
     setMessage('Website aangemaakt en actief geselecteerd.')
@@ -185,7 +191,8 @@ function App() {
       completed_at: null,
       duration_seconds: 0,
       normal_db_size_mb: 0,
-      vector_db_size_mb: 0
+      vector_db_size_mb: 0,
+      scan_max_parallel_items: settings.scan_max_parallel_items
     })
     setView('Dashboard')
     const created = await api.startScan(website.id)
@@ -207,6 +214,14 @@ function App() {
     setDocuments([])
     setSelectedDocument(null)
     setMessage('Alle crawl-data voor deze website is verwijderd.')
+  }
+
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('companycrawler-theme', next)
+      return next
+    })
   }
 
   if (!user && settings.google_auth_enabled) {
@@ -236,9 +251,12 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${theme}`}>
       <aside className="sidebar">
-        <div className="brand"><Boxes size={24} /> companycrawler</div>
+        <div className="brand">
+          <img src={smawaLogoSymbol} alt="Smawa" />
+          <span>companycrawler</span>
+        </div>
         <nav>
           {nav.map(({ label, icon: Icon }) => (
             <button className={view === label ? 'active' : ''} key={label} onClick={() => setView(label)}>
@@ -250,11 +268,19 @@ function App() {
 
       <section className="workspace">
         <header className="topbar">
-          <div>
+          <div className="topbar-title">
+            {selectedWebsite?.logo_url && <img className="company-logo" src={selectedWebsite.logo_url} alt={`${selectedWebsite.company_name} logo`} />}
+            <div>
             <h1>{view}</h1>
             <p>{selectedWebsite ? `${selectedWebsite.company_name} · ${selectedWebsite.url}` : 'Geen actieve website geselecteerd.'}</p>
+            </div>
           </div>
-          <div className="user-chip"><KeyRound size={16} /> {user?.email ?? 'loading'} · {user?.role ?? 'admin'}</div>
+          <div className="topbar-actions">
+            <button className="icon-button" onClick={toggleTheme} title={theme === 'dark' ? 'Licht thema' : 'Donker thema'}>
+              {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            </button>
+            <div className="user-chip"><KeyRound size={16} /> {user?.email ?? 'loading'} · {user?.role ?? 'admin'}</div>
+          </div>
         </header>
 
         {settings.warnings.length > 0 && <Warnings warnings={settings.warnings} onSettings={() => setView('Settings')} />}
@@ -282,8 +308,10 @@ function App() {
             selectWebsite={selectWebsite}
             setCompany={setFormCompany}
             setEditWebsiteId={setEditWebsiteId}
+            setLogoUrl={setFormLogoUrl}
             setUrl={setFormUrl}
             startScan={startScan}
+            logoUrl={formLogoUrl}
             url={formUrl}
             websites={websites}
           />
@@ -371,26 +399,105 @@ function ProgressPanel({ scan, documents, message }: { scan: Scan | null; docume
         <dt>Looptijd</dt><dd>{formatDuration(elapsedSeconds)}</dd>
         <dt>Normale DB</dt><dd>{formatMb(scan?.normal_db_size_mb ?? 0)}</dd>
         <dt>Vector DB</dt><dd>{formatMb(scan?.vector_db_size_mb ?? 0)}</dd>
+        <dt>Parallel</dt><dd>{scan?.scan_max_parallel_items ?? '-'} taken</dd>
       </dl>
     </div>
   )
 }
 
 function TreePanel({ documents, selectedDocument, setSelectedDocument }: { documents: DocumentItem[]; selectedDocument: DocumentItem | null; setSelectedDocument: (doc: DocumentItem) => void }) {
-  const rows = documents.length ? documents : seedDocuments
+  const tree = useMemo(() => buildDocumentTree(documents.length ? documents : seedDocuments), [documents])
   return (
     <div className="panel tree-panel">
       <div className="panel-title"><Network size={18} /> Website tree</div>
       <div className="tree">
-        {rows.map((doc) => (
-          <button className={selectedDocument?.id === doc.id ? 'tree-item selected' : 'tree-item'} key={doc.id} onClick={() => setSelectedDocument(doc)}>
-            <FileText size={16} />
-            <span><strong>{doc.title}</strong><small>{doc.display_summary || doc.summary}</small></span>
-          </button>
+        {tree.map((node) => (
+          <TreeNodeView key={node.id} node={node} selectedDocument={selectedDocument} setSelectedDocument={setSelectedDocument} />
         ))}
       </div>
     </div>
   )
+}
+
+type DocumentTreeNode = {
+  id: string
+  label: string
+  document?: DocumentItem
+  children: DocumentTreeNode[]
+}
+
+function TreeNodeView({ node, selectedDocument, setSelectedDocument, depth = 0 }: { node: DocumentTreeNode; selectedDocument: DocumentItem | null; setSelectedDocument: (doc: DocumentItem) => void; depth?: number }) {
+  const [open, setOpen] = useState(true)
+  const hasChildren = node.children.length > 0
+  const isSelected = Boolean(node.document && selectedDocument?.id === node.document.id)
+
+  return (
+    <div className="tree-node">
+      <button
+        className={isSelected ? 'tree-row selected' : 'tree-row'}
+        style={{ paddingLeft: 10 + depth * 16 }}
+        onClick={() => node.document ? setSelectedDocument(node.document) : setOpen((current) => !current)}
+      >
+        <span className={hasChildren ? 'tree-toggle' : 'tree-toggle empty'}>{hasChildren ? (open ? 'v' : '>') : ''}</span>
+        <FileText size={15} />
+        <span>
+          <strong>{node.document ? compactTitle(node.document.title || node.label, 68) : node.label}</strong>
+          <small>{node.document ? (node.document.display_summary || node.document.summary) : `${countTreeDocuments(node)} item${countTreeDocuments(node) === 1 ? '' : 's'}`}</small>
+        </span>
+      </button>
+      {open && hasChildren && (
+        <div className="tree-children">
+          {node.children.map((child) => (
+            <TreeNodeView key={child.id} node={child} selectedDocument={selectedDocument} setSelectedDocument={setSelectedDocument} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function buildDocumentTree(documents: DocumentItem[]) {
+  const root: DocumentTreeNode = { id: 'root', label: 'Website', children: [] }
+  for (const document of uniqueDocuments(documents)) {
+    const pathParts = documentPathParts(document)
+    let current = root
+    for (const part of pathParts.slice(0, -1)) {
+      const id = `${current.id}/${part}`
+      let next = current.children.find((child) => child.id === id && !child.document)
+      if (!next) {
+        next = { id, label: part, children: [] }
+        current.children.push(next)
+      }
+      current = next
+    }
+    const label = pathParts[pathParts.length - 1] || document.title || 'Home'
+    current.children.push({ id: `doc-${document.id}`, label, document, children: [] })
+  }
+  sortTree(root)
+  return root.children
+}
+
+function documentPathParts(document: DocumentItem) {
+  try {
+    const parsed = new URL(document.source_url)
+    const parts = parsed.pathname.split('/').filter(Boolean).map((part) => part.replace(/[-_]+/g, ' '))
+    return parts.length ? parts : ['Home']
+  } catch {
+    return [document.title || 'Document']
+  }
+}
+
+function sortTree(node: DocumentTreeNode) {
+  node.children.sort((left, right) => {
+    if (left.document && !right.document) return 1
+    if (!left.document && right.document) return -1
+    return left.label.localeCompare(right.label)
+  })
+  node.children.forEach(sortTree)
+}
+
+function countTreeDocuments(node: DocumentTreeNode): number {
+  return (node.document ? 1 : 0) + node.children.reduce((total, child) => total + countTreeDocuments(child), 0)
 }
 
 function Inspector({ document, website }: { document: (DocumentItem | DocumentDetail) | null; website: Website | null }) {
@@ -421,12 +528,14 @@ function WebsitesView(props: {
   deleteWebsite: (website: Website) => void
   detectName: () => void
   editWebsiteId: number | null
+  logoUrl: string
   resetSelected: () => void
   saveWebsite: () => void
   selectedWebsite: Website | null
   selectWebsite: (website: Website) => void
   setCompany: (value: string) => void
   setEditWebsiteId: (id: number | null) => void
+  setLogoUrl: (value: string) => void
   setUrl: (value: string) => void
   startScan: () => void
   url: string
@@ -440,7 +549,10 @@ function WebsitesView(props: {
           {props.websites.map((website) => (
             <div className={props.selectedWebsite?.id === website.id ? 'website-card selected' : 'website-card'} key={website.id}>
               <button onClick={() => props.selectWebsite(website)}>
-                <strong>{website.company_name}</strong>
+                <span className="website-card-title">
+                  {website.logo_url && <img src={website.logo_url} alt="" />}
+                  <strong>{website.company_name}</strong>
+                </span>
                 <small>{website.url}</small>
               </button>
               <div className="row-actions">
@@ -448,6 +560,7 @@ function WebsitesView(props: {
                   props.setEditWebsiteId(website.id)
                   props.setUrl(website.url)
                   props.setCompany(website.company_name)
+                  props.setLogoUrl(website.logo_url ?? '')
                 }}><Pencil size={16} /></button>
                 <button title="Verwijderen" onClick={() => props.deleteWebsite(website)}><Trash2 size={16} /></button>
               </div>
@@ -466,12 +579,20 @@ function WebsitesView(props: {
         </div>
         <label>Bedrijfsnaam</label>
         <input value={props.company} onChange={(event) => props.setCompany(event.target.value)} />
+        <label>Logo URL</label>
+        <div className="input-row">
+          <input value={props.logoUrl} onChange={(event) => props.setLogoUrl(event.target.value)} placeholder="Automatisch gevonden of handmatig invullen" />
+          <span className="logo-preview">{props.logoUrl ? <img src={props.logoUrl} alt="" /> : null}</span>
+        </div>
         <div className="button-row">
           <button className="primary" onClick={props.saveWebsite}><Save size={17} /> Opslaan</button>
           <button className="secondary" onClick={props.startScan}><Play size={17} /> Start scan</button>
         </div>
         <div className="button-row">
-          <button className="secondary" onClick={() => props.setEditWebsiteId(null)}>Nieuw formulier</button>
+          <button className="secondary" onClick={() => {
+            props.setEditWebsiteId(null)
+            props.setLogoUrl('')
+          }}>Nieuw formulier</button>
           <button className="danger" onClick={props.resetSelected}><RefreshCw size={16} /> Reset actieve website</button>
         </div>
       </div>

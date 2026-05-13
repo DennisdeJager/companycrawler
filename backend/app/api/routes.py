@@ -142,6 +142,7 @@ def serialize_scan(db: Session, scan: ScanJob) -> dict:
         "duration_seconds": _scan_duration_seconds(scan),
         "normal_db_size_mb": normal_db_size_mb,
         "vector_db_size_mb": vector_db_size_mb,
+        "scan_max_parallel_items": get_settings().scan_max_parallel_items,
     }
 
 
@@ -252,7 +253,7 @@ def update_user_role(user_id: int, role: str, db: Session = Depends(get_db)) -> 
 
 @router.post("/websites", response_model=WebsiteRead)
 def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> Website:
-    website = Website(url=str(payload.url), company_name=payload.company_name)
+    website = Website(url=str(payload.url), company_name=payload.company_name, logo_url=payload.logo_url)
     db.add(website)
     db.commit()
     db.refresh(website)
@@ -273,6 +274,8 @@ def update_website(website_id: int, payload: WebsiteUpdate, db: Session = Depend
         website.url = str(payload.url)
     if payload.company_name:
         website.company_name = payload.company_name
+    if payload.logo_url is not None:
+        website.logo_url = payload.logo_url
     db.commit()
     db.refresh(website)
     return website
@@ -301,8 +304,7 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
 
 @router.post("/detect-company-name")
 async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[str, str]:
-    name = await CompanyCrawler(db).detect_company_name(url)
-    return {"company_name": name}
+    return await CompanyCrawler(db).detect_company_profile(url)
 
 
 @router.post("/scans", response_model=ScanRead)

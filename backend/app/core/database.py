@@ -30,6 +30,18 @@ def init_db() -> None:
         with engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
+    _upgrade_schema()
+
+
+def _upgrade_schema() -> None:
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE websites ADD COLUMN IF NOT EXISTS logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
+    elif engine.dialect.name == "sqlite":
+        with engine.begin() as connection:
+            columns = [row[1] for row in connection.execute(text("PRAGMA table_info(websites)"))]
+            if "logo_url" not in columns:
+                connection.execute(text("ALTER TABLE websites ADD COLUMN logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -38,4 +50,3 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
-

@@ -34,6 +34,23 @@ def test_canonical_url_ignores_www_and_fragments() -> None:
     assert crawler._canonical_url("https://www.darbouwadvies.nl/contact/#top") == "https://darbouwadvies.nl/contact/"
 
 
+def test_detect_logo_url_prefers_declared_icons() -> None:
+    crawler = object.__new__(CompanyCrawler)
+    html = """
+    <html><head><link rel="apple-touch-icon" href="/apple.png"></head>
+    <body><img src="/brand-logo.svg" alt="Company logo"></body></html>
+    """
+
+    assert crawler._detect_logo_url("https://example.com/home", html) == "https://example.com/apple.png"
+
+
+def test_detect_logo_url_falls_back_to_logo_image() -> None:
+    crawler = object.__new__(CompanyCrawler)
+    html = '<html><body><img src="/assets/company-logo.svg" alt="Company logo"></body></html>'
+
+    assert crawler._detect_logo_url("https://example.com", html) == "https://example.com/assets/company-logo.svg"
+
+
 def make_scan_session() -> tuple[Session, Website, ScanJob]:
     engine = create_engine("sqlite:///:memory:")
     Website.__table__.create(bind=engine)

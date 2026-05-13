@@ -54,10 +54,15 @@ class CompanyCrawler:
         self.robots: dict[str, robotparser.RobotFileParser] = {}
 
     async def detect_company_name(self, url: str) -> str:
+        profile = await self.detect_company_profile(url)
+        return profile["company_name"]
+
+    async def detect_company_profile(self, url: str) -> dict[str, str]:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             response = await client.get(str(url), headers={"User-Agent": "companycrawler/1.0 public marketing crawler"})
             response.raise_for_status()
-            return await self.ai.detect_company_name(str(response.url), response.text)
+            company_name = await self.ai.detect_company_name(str(response.url), response.text)
+            return {"company_name": company_name, "logo_url": self._detect_logo_url(str(response.url), response.text)}
 
     async def run_scan(self, scan_id: int) -> None:
         scan = self.db.get(ScanJob, scan_id)
@@ -294,6 +299,35 @@ class CompanyCrawler:
         host = urlparse(url).hostname or ""
         host = host.lower()
         return host[4:] if host.startswith("www.") else host
+
+    def _detect_logo_url(self, base_url: str, html: str) -> str:
+        soup = BeautifulSoup(html, "html.parser")
+        rel_priority = ["apple-touch-icon", "icon", "shortcut icon", "mask-icon"]
+        for rel_name in rel_priority:
+            for link in soup.find_all("link", href=True):
+                rel = " ".join(link.get("rel", [])).lower()
+                if rel_name in rel:
+                    return urljoin(base_url, link["href"])
+
+        candidates: list[tuple[int, str]] = []
+        for image in soup.find_all("img", src=True):
+            text = " ".join(
+                str(image.get(attr, ""))
+                for attr in ["alt", "class", "id", "src"]
+            ).lower()
+            score = 0
+            if "logo" in text:
+                score += 10
+            if "brand" in text:
+                score += 4
+            if "header" in text:
+                score += 2
+            if score:
+                candidates.append((score, urljoin(base_url, image["src"])))
+
+        if candidates:
+            return sorted(candidates, key=lambda item: item[0], reverse=True)[0][1]
+        return ""
 
     async def _allowed_by_robots(self, client: httpx.AsyncClient, url: str) -> bool:
         parsed = urlparse(url)

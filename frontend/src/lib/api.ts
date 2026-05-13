@@ -2,6 +2,7 @@ export type Website = {
   id: number
   url: string
   company_name: string
+  logo_url: string
   created_at: string
   updated_at: string
 }
@@ -21,6 +22,7 @@ export type Scan = {
   duration_seconds: number
   normal_db_size_mb: number
   vector_db_size_mb: number
+  scan_max_parallel_items: number
 }
 
 export type DocumentItem = {
@@ -96,11 +98,11 @@ export const api = {
   session: () => request<User>('/api/auth/session'),
   login: (credential: string) => request<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
   websites: () => request<Website[]>('/api/websites'),
-  createWebsite: (url: string, company_name: string) => request<Website>('/api/websites', { method: 'POST', body: JSON.stringify({ url, company_name }) }),
-  updateWebsite: (id: number, data: { url?: string; company_name?: string }) => request<Website>(`/api/websites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  createWebsite: (url: string, company_name: string, logo_url = '') => request<Website>('/api/websites', { method: 'POST', body: JSON.stringify({ url, company_name, logo_url }) }),
+  updateWebsite: (id: number, data: { url?: string; company_name?: string; logo_url?: string }) => request<Website>(`/api/websites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   resetWebsite: (id: number) => request<{ status: string }>(`/api/websites/${id}/reset`, { method: 'POST' }),
   deleteWebsite: (id: number) => request<{ status: string }>(`/api/websites/${id}`, { method: 'DELETE' }),
-  detectCompanyName: (url: string) => request<{ company_name: string }>(`/api/detect-company-name?url=${encodeURIComponent(url)}`, { method: 'POST' }),
+  detectCompanyName: (url: string) => request<{ company_name: string; logo_url: string }>(`/api/detect-company-name?url=${encodeURIComponent(url)}`, { method: 'POST' }),
   startScan: (website_id: number) => request<Scan>('/api/scans', { method: 'POST', body: JSON.stringify({ website_id }) }),
   getScan: (id: number) => request<Scan>(`/api/scans/${id}`),
   documents: (websiteId: number) => request<DocumentItem[]>(`/api/websites/${websiteId}/documents`),

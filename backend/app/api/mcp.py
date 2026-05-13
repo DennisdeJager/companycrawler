@@ -26,7 +26,7 @@ def manifest() -> dict:
 
 @router.post("/tools/list_websites")
 def list_websites(db: Session = Depends(get_db)) -> dict:
-    return {"websites": [{"id": item.id, "url": item.url, "company_name": item.company_name} for item in db.query(Website).all()]}
+    return {"websites": [{"id": item.id, "url": item.url, "company_name": item.company_name, "logo_url": item.logo_url} for item in db.query(Website).all()]}
 
 
 @router.post("/tools/start_scan")
@@ -63,6 +63,7 @@ def get_company_profile(website_id: int, db: Session = Depends(get_db)) -> dict:
         "id": website.id,
         "url": website.url,
         "company_name": website.company_name,
+        "logo_url": website.logo_url,
         "documents": [
             {"id": doc.id, "title": doc.title, "url": doc.source_url, "summary": doc.summary}
             for doc in website.documents

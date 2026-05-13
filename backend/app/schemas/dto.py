@@ -6,11 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 class WebsiteCreate(BaseModel):
     url: HttpUrl
     company_name: str = Field(min_length=1, max_length=255)
+    logo_url: str = Field(default="", max_length=2048)
 
 
 class WebsiteUpdate(BaseModel):
     url: HttpUrl | None = None
     company_name: str | None = Field(default=None, min_length=1, max_length=255)
+    logo_url: str | None = Field(default=None, max_length=2048)
 
 
 class WebsiteRead(BaseModel):
@@ -19,6 +21,7 @@ class WebsiteRead(BaseModel):
     id: int
     url: str
     company_name: str
+    logo_url: str
     created_at: datetime
     updated_at: datetime
 
@@ -44,6 +47,7 @@ class ScanRead(BaseModel):
     duration_seconds: int = 0
     normal_db_size_mb: float = 0
     vector_db_size_mb: float = 0
+    scan_max_parallel_items: int = 1
 
 
 class DocumentRead(BaseModel):
