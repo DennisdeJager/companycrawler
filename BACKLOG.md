@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Darkmode Smawa-logo vervangen door `smawa_logo_transparant_darktheme.png`.
 - [x] Darkmode Smawa-logo vervangen door `Smawa Logo light background transparant2.png`.
 - [x] Transparant light Smawa-logo ingesteld voor darkmode.
 - [x] Analyse-run verwijderen toegevoegd vanaf de analyse-regel, inclusief alle gekoppelde jobs en resultaten.
