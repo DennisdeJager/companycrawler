@@ -1,0 +1,119 @@
+# Managed by Codex Apps ALM
+name: Deploy Latest To Dev
+
+"on":
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to deploy
+        required: true
+        default: main
+        type: string
+      deployment_plan_id:
+        description: ALM deployment plan id
+        required: false
+        type: string
+      execution_id:
+        description: ALM execution id
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  deployments: write
+
+jobs:
+  build-and-deploy-dev:
+    runs-on: [self-hosted, capps-alm]
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Prepare image repository
+        id: image
+        run: echo "repository=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.image.outputs.repository }}
+          tags: |
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Deploy over LAN SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
+          IMAGE_REF: ${{ steps.image.outputs.repository }}@${{ steps.build.outputs.digest }}
+          WEB_PORT: ${{ vars.WEB_PORT }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          APP_ENV: ${{ vars.APP_ENV }}
+          COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME }}
+          WEB_SERVICE_NAME: ${{ vars.WEB_SERVICE_NAME }}
+          WEB_INTERNAL_PORT: ${{ vars.WEB_INTERNAL_PORT }}
+          PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+          ALM_CALLBACK_URL: ${{ vars.ALM_CALLBACK_URL }}
+          ALM_CALLBACK_TOKEN: ${{ secrets.ALM_CALLBACK_TOKEN }}
+          CAPP_APP_ID: ${{ vars.CAPP_APP_ID || github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_APP_DIR'"
+          printf '%s\n' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
+          tar --exclude .git --exclude node_modules --exclude dist --exclude .env -czf /tmp/capps-source.tar.gz .
+          scp -i ~/.ssh/deploy_key /tmp/capps-source.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/source.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && tar -xzf source.tar.gz && rm source.tar.gz"
+          COMPOSE_FILE=""
+          for candidate in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
+            if [ -f "$candidate" ]; then COMPOSE_FILE="$candidate"; break; fi
+          done
+          if [ -z "$COMPOSE_FILE" ]; then
+            COMPOSE_FILE="compose.yaml"
+            cat > "$COMPOSE_FILE" <<'COMPOSE'
+          services:
+            ${WEB_SERVICE_NAME:-web}:
+              image: ${IMAGE_REF}
+              restart: unless-stopped
+              ports:
+                - "${WEB_PORT:-3000}:${WEB_INTERNAL_PORT:-3000}"
+              environment:
+                APP_ENV: ${APP_ENV:-dev}
+          COMPOSE
+          fi
+          scp -i ~/.ssh/deploy_key "$COMPOSE_FILE" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/compose.yaml"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && IMAGE_REF='$IMAGE_REF' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d --no-build"
+          WEB_CONTAINER_IP=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && cid=\$(COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' ps -q '${WEB_SERVICE_NAME:-web}' 2>/dev/null || true); if [ -n \"\$cid\" ]; then docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \"\$cid\"; fi" | tr -d '\r\n')
+          CADDY_TARGET=""
+          if [ -n "${WEB_CONTAINER_IP:-}" ] && [ -n "${WEB_INTERNAL_PORT:-}" ]; then
+            CADDY_TARGET="$WEB_CONTAINER_IP:$WEB_INTERNAL_PORT"
+          fi
+          if [ -n "${ALM_CALLBACK_URL:-}" ] && [ -n "${ALM_CALLBACK_TOKEN:-}" ]; then
+            curl -fsS -X POST "$ALM_CALLBACK_URL/api/environment-state" \
+              -H "authorization: Bearer $ALM_CALLBACK_TOKEN" \
+              -H "content-type: application/json" \
+              -d "{\"environment\":\"dev\",\"appId\":\"$CAPP_APP_ID\",\"repo\":\"${{ github.repository }}\",\"imageDigest\":\"${{ steps.build.outputs.digest }}\",\"status\":\"deployed\",\"deploymentPlanId\":\"${{ inputs.deployment_plan_id }}\",\"executionId\":\"${{ inputs.execution_id }}\",\"workflowRunId\":\"${{ github.run_id }}\",\"webServiceName\":\"${WEB_SERVICE_NAME:-web}\",\"webContainerIp\":\"$WEB_CONTAINER_IP\",\"webInternalPort\":\"${WEB_INTERNAL_PORT:-}\",\"webHostPort\":\"${WEB_PORT:-${APP_PORT:-}}\",\"publicDomain\":\"${PUBLIC_DOMAIN:-}\",\"caddyTarget\":\"$CADDY_TARGET\",\"message\":\"Self-hosted runner deployed latest ref to dev\"}"
+          fi
