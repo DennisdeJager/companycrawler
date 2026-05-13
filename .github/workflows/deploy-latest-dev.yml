@@ -49,17 +49,16 @@ jobs:
           tags: |
             type=sha,prefix=sha-
 
-      - name: Ensure Dockerfile
+      - name: Prepare Docker build
+        id: dockerfile
         run: |
           set -euo pipefail
           if [ -f Dockerfile ]; then
+            echo "build_image=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ ! -f package.json ]; then
-            echo "No Dockerfile or package.json found. Add a Dockerfile at the repository root or use a Node app with package.json." >&2
-            exit 1
-          fi
-          cat > Dockerfile <<'DOCKERFILE'
+          if [ -f package.json ]; then
+            cat > Dockerfile <<'DOCKERFILE'
           FROM node:24-bookworm-slim AS deps
           WORKDIR /app
           COPY package.json package-lock.json* ./
@@ -74,8 +73,21 @@ jobs:
           EXPOSE 3000
           CMD ["npm", "start"]
           DOCKERFILE
+            echo "build_image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for candidate in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
+            if [ -f "$candidate" ]; then
+              echo "build_image=false" >> "$GITHUB_OUTPUT"
+              echo "No root Dockerfile found; deployment will build the compose project on the target host."
+              exit 0
+            fi
+          done
+          echo "No Dockerfile, package.json, or compose file found. Add a root Dockerfile, a Node package.json, or a compose file." >&2
+          exit 1
 
       - uses: docker/build-push-action@v6
+        if: steps.dockerfile.outputs.build_image == 'true'
         id: build
         with:
           context: .
@@ -91,7 +103,9 @@ jobs:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEPLOY_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
-          IMAGE_REF: ${{ steps.image.outputs.repository }}@${{ steps.build.outputs.digest }}
+          BUILD_IMAGE: ${{ steps.dockerfile.outputs.build_image }}
+          IMAGE_REPOSITORY: ${{ steps.image.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
           WEB_PORT: ${{ vars.WEB_PORT }}
           APP_PORT: ${{ vars.APP_PORT }}
           APP_ENV: ${{ vars.APP_ENV }}
@@ -104,6 +118,10 @@ jobs:
           CAPP_APP_ID: ${{ vars.CAPP_APP_ID || github.event.repository.name }}
         run: |
           set -euo pipefail
+          IMAGE_REF=""
+          if [ "${BUILD_IMAGE:-}" = "true" ]; then
+            IMAGE_REF="$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+          fi
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
@@ -113,11 +131,16 @@ jobs:
           tar --exclude .git --exclude node_modules --exclude dist --exclude .env -czf /tmp/capps-source.tar.gz .
           scp -i ~/.ssh/deploy_key /tmp/capps-source.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/source.tar.gz"
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && tar -xzf source.tar.gz && rm source.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi"
           COMPOSE_FILE=""
           for candidate in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
             if [ -f "$candidate" ]; then COMPOSE_FILE="$candidate"; break; fi
           done
           if [ -z "$COMPOSE_FILE" ]; then
+            if [ -z "$IMAGE_REF" ]; then
+              echo "Cannot generate compose.yaml without a built image." >&2
+              exit 1
+            fi
             COMPOSE_FILE="compose.yaml"
             cat > "$COMPOSE_FILE" <<'COMPOSE'
           services:
@@ -130,8 +153,12 @@ jobs:
                 APP_ENV: ${APP_ENV:-dev}
           COMPOSE
           fi
+          COMPOSE_UP_FLAG="--no-build"
+          if grep -Eq '^[[:space:]]+build:' "$COMPOSE_FILE"; then
+            COMPOSE_UP_FLAG="--build"
+          fi
           scp -i ~/.ssh/deploy_key "$COMPOSE_FILE" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/compose.yaml"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && IMAGE_REF='$IMAGE_REF' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d --no-build"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && IMAGE_REF='$IMAGE_REF' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d $COMPOSE_UP_FLAG"
           WEB_CONTAINER_IP=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && cid=\$(COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' ps -q '${WEB_SERVICE_NAME:-web}' 2>/dev/null || true); if [ -n \"\$cid\" ]; then docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \"\$cid\"; fi" | tr -d '\r\n')
           CADDY_TARGET=""
           if [ -n "${WEB_CONTAINER_IP:-}" ] && [ -n "${WEB_INTERNAL_PORT:-}" ]; then
@@ -141,5 +168,5 @@ jobs:
             curl -fsS -X POST "$ALM_CALLBACK_URL/api/environment-state" \
               -H "authorization: Bearer $ALM_CALLBACK_TOKEN" \
               -H "content-type: application/json" \
-              -d "{\"environment\":\"dev\",\"appId\":\"$CAPP_APP_ID\",\"repo\":\"${{ github.repository }}\",\"imageDigest\":\"${{ steps.build.outputs.digest }}\",\"status\":\"deployed\",\"deploymentPlanId\":\"${{ inputs.deployment_plan_id }}\",\"executionId\":\"${{ inputs.execution_id }}\",\"workflowRunId\":\"${{ github.run_id }}\",\"webServiceName\":\"${WEB_SERVICE_NAME:-web}\",\"webContainerIp\":\"$WEB_CONTAINER_IP\",\"webInternalPort\":\"${WEB_INTERNAL_PORT:-}\",\"webHostPort\":\"${WEB_PORT:-${APP_PORT:-}}\",\"publicDomain\":\"${PUBLIC_DOMAIN:-}\",\"caddyTarget\":\"$CADDY_TARGET\",\"message\":\"Self-hosted runner deployed latest ref to dev\"}"
+              -d "{\"environment\":\"dev\",\"appId\":\"$CAPP_APP_ID\",\"repo\":\"${{ github.repository }}\",\"imageDigest\":\"$IMAGE_DIGEST\",\"status\":\"deployed\",\"deploymentPlanId\":\"${{ inputs.deployment_plan_id }}\",\"executionId\":\"${{ inputs.execution_id }}\",\"workflowRunId\":\"${{ github.run_id }}\",\"webServiceName\":\"${WEB_SERVICE_NAME:-web}\",\"webContainerIp\":\"$WEB_CONTAINER_IP\",\"webInternalPort\":\"${WEB_INTERNAL_PORT:-}\",\"webHostPort\":\"${WEB_PORT:-${APP_PORT:-}}\",\"publicDomain\":\"${PUBLIC_DOMAIN:-}\",\"caddyTarget\":\"$CADDY_TARGET\",\"message\":\"Self-hosted runner deployed latest ref to dev\"}"
           fi
