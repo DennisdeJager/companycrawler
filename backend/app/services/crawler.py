@@ -75,7 +75,7 @@ class CompanyCrawler:
 
     async def _crawl_website(self, website: Website, scan: ScanJob) -> None:
         root = self._normalize_url(website.url)
-        root_host = urlparse(root).netloc.lower()
+        root_host = self._canonical_host(root)
         queue: list[tuple[str, int]] = [(root, 0)]
         seen: set[str] = set()
 
@@ -95,6 +95,8 @@ class CompanyCrawler:
                 fetched = await self._fetch(client, current)
                 if not fetched or not fetched.text.strip():
                     continue
+                final_url = self._normalize_url(fetched.url)
+                seen.add(final_url)
                 await self._store_document(website, scan, fetched)
 
                 for link in fetched.links:
@@ -102,7 +104,7 @@ class CompanyCrawler:
                     parsed = urlparse(normalized)
                     if parsed.scheme not in {"http", "https"}:
                         continue
-                    if parsed.netloc.lower() != root_host:
+                    if self._canonical_host(normalized) != root_host:
                         continue
                     if normalized not in seen and len(seen) + len(queue) < self.settings.scan_max_items:
                         queue.append((normalized, depth + 1))
@@ -197,6 +199,11 @@ class CompanyCrawler:
         if not clean.startswith(("http://", "https://")):
             clean = "https://" + clean
         return clean.rstrip("/")
+
+    def _canonical_host(self, url: str) -> str:
+        host = urlparse(url).hostname or ""
+        host = host.lower()
+        return host[4:] if host.startswith("www.") else host
 
     async def _allowed_by_robots(self, client: httpx.AsyncClient, url: str) -> bool:
         parsed = urlparse(url)
