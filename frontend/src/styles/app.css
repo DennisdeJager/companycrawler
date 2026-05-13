@@ -167,6 +167,21 @@ button.danger { background: #fff2f2; color: #b83232; border-color: #f3c9c9; padd
   margin: 6px auto 12px;
 }
 .status-line { text-align: center; color: #43505b; font-size: 13px; }
+.scan-error {
+  max-height: 130px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff2f2;
+  border: 1px solid #f3c9c9;
+  border-radius: 8px;
+  color: #8c2525;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 10px 0 0;
+  padding: 9px;
+}
 .meter { height: 8px; background: #edf2f5; border-radius: 999px; overflow: hidden; margin: 14px 0; }
 .meter span { display: block; height: 100%; background: #f4a340; transition: width 180ms ease; }
 dl { display: grid; grid-template-columns: 132px 1fr; gap: 8px; font-size: 13px; }

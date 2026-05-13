@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from urllib import robotparser
-from urllib.parse import urldefrag, urljoin, urlparse
+from urllib.parse import urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup
@@ -63,7 +63,8 @@ class CompanyCrawler:
             await self._crawl_website(website, scan)
             scan.status = ScanStatus.completed
             scan.progress = 100
-            scan.message = "Scan afgerond"
+            if not scan.error:
+                scan.message = "Scan afgerond"
             scan.completed_at = datetime.utcnow()
             self.db.commit()
         except Exception as exc:
@@ -78,13 +79,12 @@ class CompanyCrawler:
         root_host = self._canonical_host(root)
         queue: list[tuple[str, int]] = [(root, 0)]
         seen: set[str] = set()
+        failed_urls: list[str] = []
 
         async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
             while queue and len(seen) < self.settings.scan_max_items:
                 current, depth = queue.pop(0)
                 if current in seen or depth > self.settings.scan_max_depth:
-                    continue
-                if not await self._allowed_by_robots(client, current):
                     continue
                 seen.add(current)
                 scan.items_found = max(scan.items_found, len(seen) + len(queue))
@@ -92,22 +92,36 @@ class CompanyCrawler:
                 scan.progress = min(95, int((len(seen) / self.settings.scan_max_items) * 100))
                 self.db.commit()
 
-                fetched = await self._fetch(client, current)
-                if not fetched or not fetched.text.strip():
-                    continue
-                final_url = self._normalize_url(fetched.url)
-                seen.add(final_url)
-                await self._store_document(website, scan, fetched)
+                try:
+                    if not await self._allowed_by_robots(client, current):
+                        continue
+                    fetched = await self._fetch(client, current)
+                    if not fetched or not fetched.text.strip():
+                        continue
+                    final_url = self._normalize_url(fetched.url)
+                    seen.add(final_url)
+                    await self._store_document(website, scan, fetched)
 
-                for link in fetched.links:
-                    normalized = self._normalize_url(link)
-                    parsed = urlparse(normalized)
-                    if parsed.scheme not in {"http", "https"}:
-                        continue
-                    if self._canonical_host(normalized) != root_host:
-                        continue
-                    if normalized not in seen and len(seen) + len(queue) < self.settings.scan_max_items:
-                        queue.append((normalized, depth + 1))
+                    for link in fetched.links:
+                        normalized = self._normalize_url(link)
+                        parsed = urlparse(normalized)
+                        if parsed.scheme not in {"http", "https"}:
+                            continue
+                        if self._canonical_host(normalized) != root_host:
+                            continue
+                        if normalized not in seen and len(seen) + len(queue) < self.settings.scan_max_items:
+                            queue.append((normalized, depth + 1))
+                except Exception as exc:
+                    self.db.rollback()
+                    failed_urls.append(f"{current}: {exc}")
+                    scan.error = "\n".join(failed_urls[:10])
+                    scan.message = f"Verwerkt {len(seen)} items, {len(failed_urls)} overgeslagen"
+                    self.db.commit()
+
+        if failed_urls:
+            scan.error = "\n".join(failed_urls[:10])
+            scan.message = f"Scan afgerond met {len(failed_urls)} overgeslagen URL(s)"
+            self.db.commit()
 
     async def _fetch(self, client: httpx.AsyncClient, url: str) -> FetchedContent | None:
         response = await client.get(url, headers={"User-Agent": "companycrawler/1.0 public marketing crawler"})
@@ -198,7 +212,9 @@ class CompanyCrawler:
         clean, _fragment = urldefrag(str(url))
         if not clean.startswith(("http://", "https://")):
             clean = "https://" + clean
-        return clean.rstrip("/")
+        parsed = urlsplit(clean)
+        path = "" if parsed.path == "/" else parsed.path
+        return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
 
     def _canonical_host(self, url: str) -> str:
         host = urlparse(url).hostname or ""

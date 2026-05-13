@@ -317,11 +317,13 @@ function Dashboard(props: {
 }
 
 function ProgressPanel({ scan, documents, message }: { scan: Scan | null; documents: DocumentItem[]; message: string }) {
+  const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
   return (
     <div className="panel progress-panel">
       <div className="panel-title"><Activity size={18} /> Realtime scan voortgang</div>
       <div className="progress-ring">{scan?.progress ?? 0}%</div>
-      <div className="status-line">{scan?.status ?? 'idle'} · {scan?.message ?? message}</div>
+      <div className="status-line">{scan?.status ?? 'idle'} · {statusText}</div>
+      {scan?.error && <pre className="scan-error">{scan.error}</pre>}
       <div className="meter"><span style={{ width: `${scan?.progress ?? 0}%` }} /></div>
       <dl>
         <dt>Items gevonden</dt><dd>{scan?.items_found ?? documents.length}</dd>
