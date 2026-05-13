@@ -1056,6 +1056,10 @@ function McpView() {
     <section className="panel docs-panel wide">
       <div className="panel-title"><Cable size={18} /> MCP server</div>
       <a href="/mcp" target="_blank">MCP manifest openen</a>
+      <code>POST /mcp</code>
+      <code>{'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"client","version":"1.0.0"}}}'}</code>
+      <code>{'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'}</code>
+      <code>{'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_websites","arguments":{}}}'}</code>
       <code>POST /mcp/tools/list_websites</code>
       <code>POST /mcp/tools/start_scan</code>
       <code>POST /mcp/tools/get_scan_status</code>

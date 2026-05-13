@@ -15,6 +15,7 @@
 - [x] React webconsole toegevoegd volgens goedgekeurde UI-richting.
 - [x] Docker compose deployment toegevoegd.
 - [x] ALM manifest en compose webservice-naam toegevoegd.
+- [x] MCP server geschikt gemaakt voor ChatGPT en andere MCP/LLM-clients via JSON-RPC `initialize`, `tools/list` en `tools/call`.
 
 ## Next
 

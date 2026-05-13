@@ -23,6 +23,19 @@ Daarna:
 - API: http://localhost:8000
 - Swagger: http://localhost:8000/docs
 - MCP manifest: http://localhost:8000/mcp
+- MCP JSON-RPC endpoint voor ChatGPT en andere MCP-clients: `POST http://localhost:8000/mcp`
+
+## MCP gebruik
+
+De MCP server ondersteunt Streamable HTTP via JSON-RPC op `/mcp`. Gebruik eerst `initialize`, daarna `tools/list` en vervolgens `tools/call`.
+
+Voorbeeld:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}
+```
+
+De oudere tool-endpoints onder `/mcp/tools/...` blijven beschikbaar voor bestaande scripts.
 
 ## Belangrijke scope
 
@@ -35,4 +48,3 @@ Deze tool verzamelt publieke websitecontent voor marketingdoeleinden. V1 voert g
 - Max 25 MB per bestand
 - Max depth 8
 - Robots-aware waar mogelijk
-
