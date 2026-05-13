@@ -2,14 +2,19 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import get_settings, reload_settings
+from app.core.env_file import ENV_KEY_BY_SETTING, update_env_values
 from app.models import AppSetting
 
 
 SECRET_KEYS = {"openai_api_key", "openrouter_api_key", "google_client_secret"}
+ENV_MANAGED_KEYS = set(ENV_KEY_BY_SETTING)
 
 
 def get_setting(db: Session | None, key: str, default: str = "") -> str:
+    if key in ENV_MANAGED_KEYS:
+        settings = get_settings()
+        return str(getattr(settings, key, default) or default)
     if db is not None:
         row = db.get(AppSetting, key)
         if row and row.value:
@@ -19,6 +24,15 @@ def get_setting(db: Session | None, key: str, default: str = "") -> str:
 
 
 def set_setting(db: Session, key: str, value: str, is_secret: bool | None = None) -> AppSetting:
+    if key in ENV_MANAGED_KEYS:
+        update_env_values({ENV_KEY_BY_SETTING[key]: value})
+        reload_settings()
+        row = db.get(AppSetting, key)
+        if row:
+            db.delete(row)
+            db.commit()
+        return AppSetting(key=key, value="", is_secret=key in SECRET_KEYS)
+
     row = db.get(AppSetting, key)
     if not row:
         row = AppSetting(key=key)
@@ -31,7 +45,14 @@ def set_setting(db: Session, key: str, value: str, is_secret: bool | None = None
     return row
 
 
+def purge_env_managed_settings(db: Session) -> None:
+    deleted = db.query(AppSetting).filter(AppSetting.key.in_(ENV_MANAGED_KEYS)).delete(synchronize_session=False)
+    if deleted:
+        db.commit()
+
+
 def provider_status(db: Session) -> dict:
+    purge_env_managed_settings(db)
     settings = get_settings()
     openai_key = get_setting(db, "openai_api_key", settings.openai_api_key)
     openrouter_key = get_setting(db, "openrouter_api_key", settings.openrouter_api_key)

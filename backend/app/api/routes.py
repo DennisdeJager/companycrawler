@@ -25,7 +25,7 @@ from app.services.ai import AIService
 from app.services.auth import login_with_google
 from app.services.crawler import CompanyCrawler
 from app.services.search import semantic_search
-from app.services.settings_store import provider_status, set_setting
+from app.services.settings_store import SECRET_KEYS, provider_status, set_setting
 
 router = APIRouter(prefix="/api")
 
@@ -46,9 +46,9 @@ def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depe
     for key, value in values.items():
         if value is None:
             continue
-        if key in {"openai_api_key", "openrouter_api_key"} and value.strip() == "":
+        if key in SECRET_KEYS and value.strip() == "":
             continue
-        set_setting(db, key, value.strip(), key in {"openai_api_key", "openrouter_api_key"})
+        set_setting(db, key, value.strip(), key in SECRET_KEYS)
     return provider_status(db)
 
 

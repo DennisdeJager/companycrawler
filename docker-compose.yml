@@ -17,11 +17,11 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file: .env
     depends_on:
       db:
         condition: service_healthy
     volumes:
+      - ./.env:/app/.env
       - ./backend/storage:/app/storage
 
   worker:
@@ -29,11 +29,11 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     command: ["python", "-m", "app.worker.run"]
-    env_file: .env
     depends_on:
       db:
         condition: service_healthy
     volumes:
+      - ./.env:/app/.env
       - ./backend/storage:/app/storage
 
   web:

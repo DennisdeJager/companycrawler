@@ -298,7 +298,14 @@ function App() {
         {view === 'MCP Server' && <McpView />}
         {view === 'AI Models' && <ModelsView models={models} refresh={async () => setModels(await api.refreshModels())} />}
         {view === 'Users' && <UsersView users={users} refresh={async () => setUsers(await api.users())} />}
-        {view === 'Settings' && <SettingsView settings={settings} setSettings={setSettings} refresh={load} />}
+        {view === 'Settings' && (
+          <SettingsView
+            key={`${settings.google_client_id}:${settings.default_summary_model}:${settings.default_embedding_model}`}
+            settings={settings}
+            setSettings={setSettings}
+            refresh={load}
+          />
+        )}
       </section>
     </main>
   )
@@ -589,7 +596,7 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
         <StatusLine ok={settings.google_client_secret_configured} label="Google Client Secret" />
         <label>Google Client Secret</label>
         <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Google OAuth Client Secret'} />
-        <p className="body-text">Zodra de Google Client ID is ingesteld, valideert de backend echte Google credentials. De secret wordt versleuteld als secret-instelling opgeslagen en niet teruggetoond.</p>
+        <p className="body-text">Zodra de Google Client ID is ingesteld, valideert de backend echte Google credentials. Secrets worden in .env opgeslagen en niet teruggetoond.</p>
       </div>
     </section>
   )
