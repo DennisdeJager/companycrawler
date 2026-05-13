@@ -231,7 +231,8 @@ function App() {
       <main className="guest-shell">
         <BuildInfo />
         <section className="guest-panel">
-          <ShieldCheck size={34} />
+          <div className="guest-logo"><SmawaMark /></div>
+          <ShieldCheck size={26} />
           <h1>Inloggen met Google</h1>
           <p>Gebruik je Google account om toegang tot companycrawler aan te vragen.</p>
           <a className="google-login-button" href="/api/auth/google/start">Inloggen met Google</a>
@@ -246,7 +247,8 @@ function App() {
       <main className="guest-shell">
         <BuildInfo />
         <section className="guest-panel">
-          <ShieldCheck size={34} />
+          <div className="guest-logo"><SmawaMark /></div>
+          <ShieldCheck size={26} />
           <h1>Je account wacht op goedkeuring</h1>
           <p>Je Google login is geregistreerd. Een beheerder moet je nog de rol gebruiker of beheerder geven.</p>
         </section>
