@@ -5,7 +5,7 @@ COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
 COPY .git /repo/.git
-RUN VITE_COMMIT_ID=$(git --git-dir=/repo/.git rev-parse --short HEAD) VITE_BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')" npm run build
+RUN VITE_COMMIT_ID=$(git --git-dir=/repo/.git rev-parse --short HEAD) VITE_BUILD_TIME_ISO="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" npm run build
 
 FROM nginx:1.27-alpine
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf

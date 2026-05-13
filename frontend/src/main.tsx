@@ -25,7 +25,6 @@ import {
   Users
 } from 'lucide-react'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
-import smawaLogoSymbol from './assets/smawa-logo-symbol.png'
 import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
@@ -43,7 +42,7 @@ const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
 ]
 
 const buildCommit = import.meta.env.VITE_COMMIT_ID ?? 'dev'
-const buildTime = import.meta.env.VITE_BUILD_TIME ?? 'local'
+const buildTimeIso = import.meta.env.VITE_BUILD_TIME_ISO ?? ''
 
 const emptySettings: ProviderSettings = {
   openai_configured: false,
@@ -260,7 +259,7 @@ function App() {
       <BuildInfo />
       <aside className="sidebar">
         <div className="brand">
-          <img src={smawaLogoSymbol} alt="Smawa" />
+          <SmawaMark />
           <span>companycrawler</span>
         </div>
         <nav>
@@ -370,7 +369,32 @@ function Dashboard(props: {
 }
 
 function BuildInfo() {
-  return <div className="build-info">commit {buildCommit} · {buildTime}</div>
+  return <div className="build-info">commit {buildCommit} · {formatBuildTime(buildTimeIso)}</div>
+}
+
+function formatBuildTime(value: string) {
+  if (!value) return 'local'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+function SmawaMark() {
+  return (
+    <svg className="smawa-mark" viewBox="0 0 64 64" aria-hidden="true">
+      <path className="smawa-mark-accent" d="M18 9h29l-12 8H6L18 9Z" />
+      <path d="M6 17h29v18H18v11H6V17Z" />
+      <path d="M35 35h23v18H29V42l6-7Z" />
+      <path className="smawa-mark-muted" d="M6 46h23v8L18 61 6 54v-8Z" />
+    </svg>
+  )
 }
 
 function secondsBetween(start?: string | null, end?: string | null) {

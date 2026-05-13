@@ -27,7 +27,9 @@ button, input, select { font: inherit; }
   grid-template-columns: 248px 1fr;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 85% 8%, rgba(15, 139, 141, 0.09), transparent 28%),
+    linear-gradient(125deg, rgba(15, 139, 141, 0.08) 0 1px, transparent 1px 84px),
+    radial-gradient(circle at 84% 6%, rgba(15, 139, 141, 0.12), transparent 28%),
+    radial-gradient(circle at 46% 102%, rgba(244, 163, 64, 0.1), transparent 32%),
     #f5f7f9;
 }
 
@@ -44,13 +46,18 @@ button, input, select { font: inherit; }
   font-weight: 800;
   font-size: 19px;
   margin-bottom: 28px;
+  color: #0f6f71;
 }
-.brand img {
-  width: 48px;
-  height: 48px;
-  object-fit: contain;
-  border-radius: 8px;
+.smawa-mark {
+  width: 58px;
+  height: 58px;
+  color: #10233f;
+  filter: drop-shadow(0 8px 16px rgba(15, 139, 141, 0.16));
+  flex: 0 0 auto;
 }
+.smawa-mark path { fill: currentColor; }
+.smawa-mark-accent { fill: #0f8b8d !important; }
+.smawa-mark-muted { fill: #9aa5ad !important; }
 
 nav { display: grid; gap: 5px; }
 nav button {
@@ -83,8 +90,28 @@ nav button.active, nav button:hover {
   bottom: 18px;
   width: min(34vw, 420px);
   aspect-ratio: 1;
-  background: url("../assets/smawa-logo-symbol.png") center / contain no-repeat;
-  opacity: 0.035;
+  background:
+    linear-gradient(90deg, rgba(15, 139, 141, 0.22), rgba(244, 163, 64, 0.2)),
+    radial-gradient(circle, rgba(15, 139, 141, 0.2) 0 2px, transparent 3px);
+  background-size: auto, 38px 38px;
+  mask:
+    linear-gradient(135deg, transparent 0 16%, #000 17% 68%, transparent 69%),
+    radial-gradient(circle at 48% 48%, #000 0 42%, transparent 43%);
+  opacity: 0.16;
+  pointer-events: none;
+}
+.workspace::after {
+  content: "";
+  position: fixed;
+  right: 54px;
+  top: 86px;
+  width: 260px;
+  height: 180px;
+  background:
+    linear-gradient(90deg, rgba(15, 139, 141, 0.18), rgba(15, 139, 141, 0)) 0 22px / 100% 1px no-repeat,
+    linear-gradient(90deg, rgba(244, 163, 64, 0.22), rgba(244, 163, 64, 0)) 0 88px / 88% 1px no-repeat,
+    linear-gradient(90deg, rgba(15, 139, 141, 0.12), rgba(15, 139, 141, 0)) 0 144px / 72% 1px no-repeat;
+  opacity: 0.65;
   pointer-events: none;
 }
 .topbar {
@@ -168,6 +195,17 @@ h1 { margin: 0; font-size: 25px; line-height: 1.15; letter-spacing: 0; }
   box-shadow: 0 10px 28px rgba(28, 42, 56, 0.05);
   padding: 16px;
   min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+.panel::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto auto;
+  width: 120px;
+  height: 70px;
+  background: linear-gradient(135deg, rgba(15, 139, 141, 0.08), transparent 62%);
+  pointer-events: none;
 }
 .wide { max-width: 1120px; }
 .panel-title {
@@ -229,6 +267,13 @@ button.danger { background: #fff2f2; color: #b83232; border-color: #f3c9c9; padd
   font-size: 24px;
   margin: 6px auto 12px;
   position: relative;
+}
+.progress-ring::after {
+  content: "";
+  position: absolute;
+  inset: 14px;
+  border-radius: 999px;
+  border: 1px dashed rgba(15, 139, 141, 0.24);
 }
 .progress-panel.scanning .progress-ring {
   animation: scanPulse 1.6s ease-in-out infinite;
@@ -355,6 +400,10 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 
 .mindmap-panel {
   overflow: auto;
+  background:
+    radial-gradient(circle at 18px 18px, rgba(15, 139, 141, 0.14) 0 2px, transparent 3px),
+    #ffffff;
+  background-size: 38px 38px;
 }
 .mindmap-canvas {
   position: relative;
@@ -582,18 +631,29 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 .theme-dark {
   color: #e8eef2;
   background:
-    radial-gradient(circle at 85% 8%, rgba(88, 195, 196, 0.12), transparent 28%),
+    linear-gradient(125deg, rgba(88, 195, 196, 0.08) 0 1px, transparent 1px 84px),
+    radial-gradient(circle at 84% 6%, rgba(88, 195, 196, 0.15), transparent 28%),
+    radial-gradient(circle at 46% 102%, rgba(244, 163, 64, 0.1), transparent 32%),
     #111820;
 }
 .theme-dark .build-info {
   color: #9cafbd;
 }
 .theme-dark .workspace::before {
-  filter: saturate(1.2) brightness(1.25);
-  opacity: 0.055;
+  opacity: 0.18;
 }
-.theme-dark .brand img {
-  filter: drop-shadow(0 0 14px rgba(88, 195, 196, 0.26));
+.theme-dark .brand {
+  color: #8bd5d5;
+}
+.theme-dark .smawa-mark {
+  color: #e8eef2;
+  filter: drop-shadow(0 0 18px rgba(88, 195, 196, 0.28));
+}
+.theme-dark .smawa-mark-accent {
+  fill: #58c3c4 !important;
+}
+.theme-dark .smawa-mark-muted {
+  fill: #6f7e89 !important;
 }
 .theme-dark .sidebar,
 .theme-dark .panel,
@@ -651,6 +711,12 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
   background: #101820;
   border-color: #2a3845;
   color: #e8eef2;
+}
+.theme-dark .mindmap-panel {
+  background:
+    radial-gradient(circle at 18px 18px, rgba(88, 195, 196, 0.16) 0 2px, transparent 3px),
+    #17212b;
+  background-size: 38px 38px;
 }
 .theme-dark button.secondary,
 .theme-dark .icon-button,
