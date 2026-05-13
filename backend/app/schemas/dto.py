@@ -109,6 +109,7 @@ class ProviderSettingsRead(BaseModel):
     openai_configured: bool
     openrouter_configured: bool
     google_auth_enabled: bool
+    google_client_secret_configured: bool
     google_client_id: str
     default_summary_provider: str
     default_summary_model: str
@@ -121,6 +122,7 @@ class ProviderSettingsUpdate(BaseModel):
     openai_api_key: str | None = None
     openrouter_api_key: str | None = None
     google_client_id: str | None = None
+    google_client_secret: str | None = None
     default_summary_provider: str | None = None
     default_summary_model: str | None = None
     default_embedding_provider: str | None = None

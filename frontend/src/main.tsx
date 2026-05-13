@@ -57,6 +57,7 @@ const emptySettings: ProviderSettings = {
   openai_configured: false,
   openrouter_configured: false,
   google_auth_enabled: false,
+  google_client_secret_configured: false,
   google_client_id: '',
   default_summary_provider: 'openai',
   default_summary_model: 'gpt-5.4-mini',
@@ -542,6 +543,7 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
   const [openaiKey, setOpenaiKey] = useState('')
   const [openrouterKey, setOpenrouterKey] = useState('')
   const [googleClientId, setGoogleClientId] = useState(settings.google_client_id)
+  const [googleClientSecret, setGoogleClientSecret] = useState('')
   const [summaryModel, setSummaryModel] = useState(settings.default_summary_model)
   const [embeddingModel, setEmbeddingModel] = useState(settings.default_embedding_model)
 
@@ -550,6 +552,7 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
       openai_api_key: openaiKey,
       openrouter_api_key: openrouterKey,
       google_client_id: googleClientId,
+      google_client_secret: googleClientSecret,
       default_summary_provider: settings.default_summary_provider,
       default_summary_model: summaryModel,
       default_embedding_provider: settings.default_embedding_provider,
@@ -558,6 +561,7 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
     setSettings(saved)
     setOpenaiKey('')
     setOpenrouterKey('')
+    setGoogleClientSecret('')
     await refresh()
   }
 
@@ -582,7 +586,10 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
         <StatusLine ok={settings.google_auth_enabled} label="Google login" />
         <label>Google Client ID</label>
         <input value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} placeholder="Google OAuth Client ID" />
-        <p className="body-text">Zodra de Google Client ID is ingesteld, valideert de backend echte Google credentials. Zonder Client ID gebruikt development login alleen het eerste admin-account.</p>
+        <StatusLine ok={settings.google_client_secret_configured} label="Google Client Secret" />
+        <label>Google Client Secret</label>
+        <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Google OAuth Client Secret'} />
+        <p className="body-text">Zodra de Google Client ID is ingesteld, valideert de backend echte Google credentials. De secret wordt versleuteld als secret-instelling opgeslagen en niet teruggetoond.</p>
       </div>
     </section>
   )

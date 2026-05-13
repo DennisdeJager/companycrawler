@@ -56,6 +56,7 @@ export type ProviderSettings = {
   openai_configured: boolean
   openrouter_configured: boolean
   google_auth_enabled: boolean
+  google_client_secret_configured: boolean
   google_client_id: string
   default_summary_provider: string
   default_summary_model: string
@@ -90,7 +91,7 @@ export const api = {
   users: () => request<User[]>('/api/users'),
   updateUserRole: (id: number, role: string) => request<User>(`/api/users/${id}/role?role=${encodeURIComponent(role)}`, { method: 'PATCH' }),
   providerSettings: () => request<ProviderSettings>('/api/settings/providers'),
-  saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string }) =>
+  saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string; google_client_secret?: string }) =>
     request<ProviderSettings>('/api/settings/providers', { method: 'PUT', body: JSON.stringify(data) }),
   mcp: () => request<{ tools: { name: string; description: string }[] }>('/mcp')
 }

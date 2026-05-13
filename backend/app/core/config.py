@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_url: str = "http://localhost:8000"
     database_url: str = "postgresql+psycopg://companycrawler:companycrawler@db:5432/companycrawler"
     google_client_id: str = ""
+    google_client_secret: str = ""
     openai_api_key: str = ""
     openrouter_api_key: str = ""
     default_summary_provider: str = "openai"
@@ -26,4 +27,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

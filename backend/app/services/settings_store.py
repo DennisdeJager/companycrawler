@@ -6,7 +6,7 @@ from app.core.config import get_settings
 from app.models import AppSetting
 
 
-SECRET_KEYS = {"openai_api_key", "openrouter_api_key"}
+SECRET_KEYS = {"openai_api_key", "openrouter_api_key", "google_client_secret"}
 
 
 def get_setting(db: Session | None, key: str, default: str = "") -> str:
@@ -36,6 +36,7 @@ def provider_status(db: Session) -> dict:
     openai_key = get_setting(db, "openai_api_key", settings.openai_api_key)
     openrouter_key = get_setting(db, "openrouter_api_key", settings.openrouter_api_key)
     google_client_id = get_setting(db, "google_client_id", settings.google_client_id)
+    google_client_secret = get_setting(db, "google_client_secret", settings.google_client_secret)
     summary_provider = get_setting(db, "default_summary_provider", settings.default_summary_provider)
     summary_model = get_setting(db, "default_summary_model", settings.default_summary_model)
     embedding_provider = get_setting(db, "default_embedding_provider", settings.default_embedding_provider)
@@ -47,10 +48,13 @@ def provider_status(db: Session) -> dict:
         warnings.append("Geen OpenAI API key ingesteld. OpenAI embeddings en OpenAI modelcatalogus zijn niet live beschikbaar.")
     if not google_client_id:
         warnings.append("Google login is niet geconfigureerd. Development login gebruikt tijdelijk een e-mailadres.")
+    elif not google_client_secret:
+        warnings.append("Google Client ID is ingesteld, maar Google Client Secret ontbreekt nog in beheer.")
     return {
         "openai_configured": bool(openai_key),
         "openrouter_configured": bool(openrouter_key),
         "google_auth_enabled": bool(google_client_id),
+        "google_client_secret_configured": bool(google_client_secret),
         "google_client_id": google_client_id,
         "default_summary_provider": summary_provider,
         "default_summary_model": summary_model,
