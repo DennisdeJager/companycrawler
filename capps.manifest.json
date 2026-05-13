@@ -26,18 +26,8 @@
     }
   },
   "requiredVariables": [
-    "APP_ENV",
-    "DATABASE_URL"
+    "APP_ENV"
   ],
-  "requiredSecrets": [
-    {
-      "name": "OPENAI_API_KEY",
-      "scope": "environment"
-    },
-    {
-      "name": "OPENROUTER_API_KEY",
-      "scope": "environment"
-    }
-  ],
+  "requiredSecrets": [],
   "dependencies": []
 }
