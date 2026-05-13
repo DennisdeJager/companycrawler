@@ -122,6 +122,7 @@ jobs:
           if [ "${BUILD_IMAGE:-}" = "true" ]; then
             IMAGE_REF="$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           fi
+          CALLBACK_IMAGE_DIGEST="${IMAGE_DIGEST:-source-${GITHUB_SHA}}"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
@@ -168,5 +169,5 @@ jobs:
             curl -fsS -X POST "$ALM_CALLBACK_URL/api/environment-state" \
               -H "authorization: Bearer $ALM_CALLBACK_TOKEN" \
               -H "content-type: application/json" \
-              -d "{\"environment\":\"dev\",\"appId\":\"$CAPP_APP_ID\",\"repo\":\"${{ github.repository }}\",\"imageDigest\":\"$IMAGE_DIGEST\",\"status\":\"deployed\",\"deploymentPlanId\":\"${{ inputs.deployment_plan_id }}\",\"executionId\":\"${{ inputs.execution_id }}\",\"workflowRunId\":\"${{ github.run_id }}\",\"webServiceName\":\"${WEB_SERVICE_NAME:-web}\",\"webContainerIp\":\"$WEB_CONTAINER_IP\",\"webInternalPort\":\"${WEB_INTERNAL_PORT:-}\",\"webHostPort\":\"${WEB_PORT:-${APP_PORT:-}}\",\"publicDomain\":\"${PUBLIC_DOMAIN:-}\",\"caddyTarget\":\"$CADDY_TARGET\",\"message\":\"Self-hosted runner deployed latest ref to dev\"}"
+              -d "{\"environment\":\"dev\",\"appId\":\"$CAPP_APP_ID\",\"repo\":\"${{ github.repository }}\",\"imageDigest\":\"$CALLBACK_IMAGE_DIGEST\",\"status\":\"deployed\",\"deploymentPlanId\":\"${{ inputs.deployment_plan_id }}\",\"executionId\":\"${{ inputs.execution_id }}\",\"workflowRunId\":\"${{ github.run_id }}\",\"webServiceName\":\"${WEB_SERVICE_NAME:-web}\",\"webContainerIp\":\"$WEB_CONTAINER_IP\",\"webInternalPort\":\"${WEB_INTERNAL_PORT:-}\",\"webHostPort\":\"${WEB_PORT:-${APP_PORT:-}}\",\"publicDomain\":\"${PUBLIC_DOMAIN:-}\",\"caddyTarget\":\"$CADDY_TARGET\",\"message\":\"Self-hosted runner deployed latest ref to dev\"}"
           fi
