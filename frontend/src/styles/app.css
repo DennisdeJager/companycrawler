@@ -765,6 +765,46 @@ button.compact {
   border-top: 1px solid #eef2f5;
   margin: 16px 0;
 }
+.settings-panel {
+  display: grid;
+  gap: 16px;
+}
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid #eef2f5;
+  padding-bottom: 12px;
+}
+.settings-tabs button {
+  min-height: 40px;
+  border: 1px solid #dfe6ec;
+  background: #ffffff;
+  color: #66727f;
+  border-radius: 8px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.settings-tabs button.active {
+  border-color: rgba(15, 139, 141, 0.45);
+  background: #edfafa;
+  color: #0f6f71;
+}
+.settings-tab-body {
+  max-width: 720px;
+}
+.settings-tab-body button.primary {
+  margin-top: 14px;
+}
+.compact-settings {
+  max-width: 560px;
+}
+.prompt-tab-body {
+  max-width: none;
+}
 .number-setting {
   margin-top: 10px;
 }
@@ -895,6 +935,7 @@ button.compact {
 .theme-dark input,
 .theme-dark select,
 .theme-dark textarea,
+.theme-dark .settings-tabs button,
 .theme-dark .tree-row,
 .theme-dark .tree-item,
 .theme-dark .website-card,
@@ -933,6 +974,7 @@ button.compact {
   border-color: #236b6e;
 }
 .theme-dark .analysis-run-row.selected,
+.theme-dark .settings-tabs button.active,
 .theme-dark .job-tabs button.active {
   background: #123033;
   border-color: #236b6e;

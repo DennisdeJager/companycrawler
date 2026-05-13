@@ -38,6 +38,7 @@ import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
+type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts'
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
   { label: 'Dashboard', icon: Activity },
@@ -54,6 +55,7 @@ const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
 
 const buildCommit = import.meta.env.VITE_COMMIT_ID ?? 'dev'
 const buildTimeIso = import.meta.env.VITE_BUILD_TIME_ISO ?? ''
+const selectedWebsiteStoragePrefix = 'companycrawler-selected-website'
 
 const emptySettings: ProviderSettings = {
   openai_configured: false,
@@ -99,7 +101,26 @@ function App() {
 
   const activeModel = useMemo(() => models.find((model) => model.purpose === 'summary') ?? models[0], [models])
 
-  async function load() {
+  function selectedWebsiteStorageKey(activeUser: User | null) {
+    return activeUser ? `${selectedWebsiteStoragePrefix}-${activeUser.id}` : selectedWebsiteStoragePrefix
+  }
+
+  function rememberSelectedWebsite(website: Website | null, activeUser: User | null = user) {
+    const key = selectedWebsiteStorageKey(activeUser)
+    if (website) {
+      localStorage.setItem(key, String(website.id))
+      return
+    }
+    localStorage.removeItem(key)
+  }
+
+  function getRememberedWebsiteId(activeUser: User | null = user) {
+    const value = localStorage.getItem(selectedWebsiteStorageKey(activeUser))
+    const id = value ? Number(value) : 0
+    return Number.isFinite(id) && id > 0 ? id : null
+  }
+
+  async function load(activeUser: User | null = user) {
     const [websiteRows, modelRows, userRows, providerSettings, promptRows] = await Promise.all([
       api.websites(),
       api.models(),
@@ -112,12 +133,18 @@ function App() {
     setUsers(userRows)
     setSettings(providerSettings)
     setAnalysisPrompts(promptRows)
-    const website = selectedWebsite ? websiteRows.find((item) => item.id === selectedWebsite.id) ?? websiteRows[0] ?? null : websiteRows[0] ?? null
-    await selectWebsite(website, false)
+    const rememberedWebsiteId = getRememberedWebsiteId(activeUser)
+    const website =
+      (selectedWebsite ? websiteRows.find((item) => item.id === selectedWebsite.id) : null) ??
+      (rememberedWebsiteId ? websiteRows.find((item) => item.id === rememberedWebsiteId) : null) ??
+      websiteRows[0] ??
+      null
+    await selectWebsite(website, false, activeUser)
   }
 
-  async function selectWebsite(website: Website | null, announce = true) {
+  async function selectWebsite(website: Website | null, announce = true, activeUser: User | null = user) {
     setSelectedWebsite(website)
+    rememberSelectedWebsite(website, activeUser)
     if (!website) {
       setDocuments([])
       setSelectedDocument(null)
@@ -140,12 +167,15 @@ function App() {
       .then(async (providerSettings) => {
         setSettings(providerSettings)
         if (!providerSettings.google_auth_enabled) {
-          return api.login('admin@example.com').then(setUser).then(load)
+          return api.login('admin@example.com').then(async (loggedIn) => {
+            setUser(loggedIn)
+            await load(loggedIn)
+          })
         }
         const loggedIn = await api.session().catch(() => null)
         if (loggedIn) {
           setUser(loggedIn)
-          await load()
+          await load(loggedIn)
         }
         return undefined
       })
@@ -1093,10 +1123,6 @@ function AnalysisView({
   const [selectedPromptId, setSelectedPromptId] = useState<string>('')
   const selectedJob = activeAnalysis?.jobs.find((job) => job.prompt_id === selectedPromptId) ?? activeAnalysis?.jobs[0] ?? null
 
-  useEffect(() => {
-    if (activeAnalysis?.jobs.length) setSelectedPromptId(activeAnalysis.jobs[0].prompt_id)
-  }, [activeAnalysis?.id])
-
   return (
     <section className="analysis-layout">
       <div className="panel analysis-list-panel">
@@ -1258,6 +1284,7 @@ function SettingsView({
   const [scanMaxFileMb, setScanMaxFileMb] = useState(settings.scan_max_file_mb)
   const [scanMaxDepth, setScanMaxDepth] = useState(settings.scan_max_depth)
   const [scanMaxParallelItems, setScanMaxParallelItems] = useState(settings.scan_max_parallel_items)
+  const [activeTab, setActiveTab] = useState<SettingsTab>('providers')
 
   async function save() {
     const saved = await api.saveProviderSettings({
@@ -1282,60 +1309,90 @@ function SettingsView({
   }
 
   return (
-    <section className="split-layout">
-      <div className="panel form-panel">
-        <div className="panel-title"><KeyRound size={18} /> Provider instellingen</div>
-        <StatusLine ok={settings.openai_configured} label="OpenAI API key" />
-        <label>Nieuwe OpenAI API key</label>
-        <input type="password" value={openaiKey} onChange={(event) => setOpenaiKey(event.target.value)} placeholder={settings.openai_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-...'} />
-        <StatusLine ok={settings.openrouter_configured} label="OpenRouter API key" />
-        <label>Nieuwe OpenRouter API key</label>
-        <input type="password" value={openrouterKey} onChange={(event) => setOpenrouterKey(event.target.value)} placeholder={settings.openrouter_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-or-...'} />
-        <label>Default summary model</label>
-        <input value={summaryModel} onChange={(event) => setSummaryModel(event.target.value)} />
-        <label>Default embedding model</label>
-        <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} />
-        <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
+    <section className="panel settings-panel wide">
+      <div className="settings-tabs" role="tablist" aria-label="Settings onderdelen">
+        <button className={activeTab === 'providers' ? 'active' : ''} onClick={() => setActiveTab('providers')} type="button">
+          <KeyRound size={16} /> Provider instellingen
+        </button>
+        <button className={activeTab === 'google' ? 'active' : ''} onClick={() => setActiveTab('google')} type="button">
+          <ShieldCheck size={16} /> Google authenticatie
+        </button>
+        <button className={activeTab === 'crawl' ? 'active' : ''} onClick={() => setActiveTab('crawl')} type="button">
+          <Network size={16} /> Crawl instellingen
+        </button>
+        <button className={activeTab === 'prompts' ? 'active' : ''} onClick={() => setActiveTab('prompts')} type="button">
+          <ClipboardList size={16} /> Promptbeheer
+        </button>
       </div>
-      <div className="panel form-panel">
-        <div className="panel-title"><ShieldCheck size={18} /> Google authenticatie</div>
-        <StatusLine ok={settings.google_auth_enabled} label="Google login" />
-        <label>Google Client ID</label>
-        <input value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} placeholder="Google OAuth Client ID" />
-        <GoogleOriginDiagnostics settings={settings} />
-        <StatusLine ok={settings.google_client_secret_configured} label="Google Client Secret" />
-        <label>Google Client Secret</label>
-        <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Vereist voor server-side redirect login'} />
-        <p className="body-text">De backend wisselt de Google authorization code om voor een ID token en zet daarna een sessiecookie. Secrets worden alleen in .env opgeslagen en niet teruggetoond.</p>
-        <div className="settings-divider" />
-        <div className="panel-title"><Network size={18} /> Crawl instellingen</div>
-        <NumberSetting
-          label="Max items"
-          value={scanMaxItems}
-          setValue={setScanMaxItems}
-          help="Maximum aantal unieke URL's of documenten dat een scan verwerkt. Hoger geeft completere scans, maar duurt langer."
-        />
-        <NumberSetting
-          label="Max file MB"
-          value={scanMaxFileMb}
-          setValue={setScanMaxFileMb}
-          help="Maximale grootte van een bestand dat wordt gedownload. Grotere PDF's of documenten worden overgeslagen."
-        />
-        <NumberSetting
-          label="Max depth"
-          value={scanMaxDepth}
-          setValue={setScanMaxDepth}
-          help="Maximale klikdiepte vanaf de startpagina. Diepte 1 zijn links op de homepage, diepte 2 links daarvandaan."
-        />
-        <NumberSetting
-          label="Parallel items"
-          value={scanMaxParallelItems}
-          setValue={setScanMaxParallelItems}
-          help="Aantal pagina's of bestanden dat tegelijk wordt opgehaald, samengevat en gevectoriseerd."
-        />
-        <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
-      </div>
-      <PromptManager prompts={prompts} saveAnalysisPrompt={saveAnalysisPrompt} />
+
+      {activeTab === 'providers' && (
+        <div className="settings-tab-body">
+          <div className="panel-title"><KeyRound size={18} /> Provider instellingen</div>
+          <StatusLine ok={settings.openai_configured} label="OpenAI API key" />
+          <label>Nieuwe OpenAI API key</label>
+          <input type="password" value={openaiKey} onChange={(event) => setOpenaiKey(event.target.value)} placeholder={settings.openai_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-...'} />
+          <StatusLine ok={settings.openrouter_configured} label="OpenRouter API key" />
+          <label>Nieuwe OpenRouter API key</label>
+          <input type="password" value={openrouterKey} onChange={(event) => setOpenrouterKey(event.target.value)} placeholder={settings.openrouter_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-or-...'} />
+          <label>Default summary model</label>
+          <input value={summaryModel} onChange={(event) => setSummaryModel(event.target.value)} />
+          <label>Default embedding model</label>
+          <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} />
+          <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
+        </div>
+      )}
+
+      {activeTab === 'google' && (
+        <div className="settings-tab-body">
+          <div className="panel-title"><ShieldCheck size={18} /> Google authenticatie</div>
+          <StatusLine ok={settings.google_auth_enabled} label="Google login" />
+          <label>Google Client ID</label>
+          <input value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} placeholder="Google OAuth Client ID" />
+          <GoogleOriginDiagnostics settings={settings} />
+          <StatusLine ok={settings.google_client_secret_configured} label="Google Client Secret" />
+          <label>Google Client Secret</label>
+          <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Vereist voor server-side redirect login'} />
+          <p className="body-text">De backend wisselt de Google authorization code om voor een ID token en zet daarna een sessiecookie. Secrets worden alleen in .env opgeslagen en niet teruggetoond.</p>
+          <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
+        </div>
+      )}
+
+      {activeTab === 'crawl' && (
+        <div className="settings-tab-body compact-settings">
+          <div className="panel-title"><Network size={18} /> Crawl instellingen</div>
+          <NumberSetting
+            label="Max items"
+            value={scanMaxItems}
+            setValue={setScanMaxItems}
+            help="Maximum aantal unieke URL's of documenten dat een scan verwerkt. Hoger geeft completere scans, maar duurt langer."
+          />
+          <NumberSetting
+            label="Max file MB"
+            value={scanMaxFileMb}
+            setValue={setScanMaxFileMb}
+            help="Maximale grootte van een bestand dat wordt gedownload. Grotere PDF's of documenten worden overgeslagen."
+          />
+          <NumberSetting
+            label="Max depth"
+            value={scanMaxDepth}
+            setValue={setScanMaxDepth}
+            help="Maximale klikdiepte vanaf de startpagina. Diepte 1 zijn links op de homepage, diepte 2 links daarvandaan."
+          />
+          <NumberSetting
+            label="Parallel items"
+            value={scanMaxParallelItems}
+            setValue={setScanMaxParallelItems}
+            help="Aantal pagina's of bestanden dat tegelijk wordt opgehaald, samengevat en gevectoriseerd."
+          />
+          <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
+        </div>
+      )}
+
+      {activeTab === 'prompts' && (
+        <div className="settings-tab-body prompt-tab-body">
+          <PromptManager prompts={prompts} saveAnalysisPrompt={saveAnalysisPrompt} />
+        </div>
+      )}
     </section>
   )
 }
@@ -1343,14 +1400,8 @@ function SettingsView({
 function PromptManager({ prompts, saveAnalysisPrompt }: { prompts: AnalysisPrompt[]; saveAnalysisPrompt: (promptId: string, promptText: string) => Promise<void> }) {
   const [selectedPromptId, setSelectedPromptId] = useState('')
   const selected = prompts.find((prompt) => prompt.prompt_id === selectedPromptId) ?? prompts[0]
-  const [promptText, setPromptText] = useState('')
-
-  useEffect(() => {
-    if (selected) {
-      setSelectedPromptId(selected.prompt_id)
-      setPromptText(selected.prompt_text)
-    }
-  }, [selected?.prompt_id])
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({})
+  const promptText = selected ? promptDrafts[selected.prompt_id] ?? selected.prompt_text : ''
 
   async function save() {
     if (!selected) return
@@ -1358,7 +1409,7 @@ function PromptManager({ prompts, saveAnalysisPrompt }: { prompts: AnalysisPromp
   }
 
   return (
-    <div className="panel form-panel prompt-manager">
+    <div className="prompt-manager">
       <div className="panel-title"><ClipboardList size={18} /> Promptbeheer</div>
       <label>Prompt id</label>
       <select value={selected?.prompt_id ?? ''} onChange={(event) => setSelectedPromptId(event.target.value)}>
@@ -1369,7 +1420,7 @@ function PromptManager({ prompts, saveAnalysisPrompt }: { prompts: AnalysisPromp
       {selected && (
         <>
           <small>{selected.title} · {selected.description}</small>
-          <textarea value={promptText} onChange={(event) => setPromptText(event.target.value)} />
+          <textarea value={promptText} onChange={(event) => setPromptDrafts((drafts) => ({ ...drafts, [selected.prompt_id]: event.target.value }))} />
           {!promptText.trim() && <p className="inline-warning">Deze prompt mag niet leeg zijn.</p>}
           <div className="prompt-meta">
             <span>{selected.is_system_prompt ? 'Systeemprompt' : 'Agent job'}</span>

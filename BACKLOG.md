@@ -2,6 +2,8 @@
 
 ## Done
 
+- [x] Actieve website-selectie wordt per gebruiker onthouden na een page reload.
+- [x] Settings opgesplitst in tabbladen voor providers, Google authenticatie, crawl instellingen en promptbeheer.
 - [x] Agentische analyseflow met beheerbare prompts, analyse-opslag, REST/MCP tools en Analyse UI toegevoegd.
 - [x] MCP JSON-RPC endpoint geeft nu een nette parse error terug bij malformed JSON.
 - [x] MCP semantische zoekopdracht gerepareerd door de SQLAlchemy join expliciet te maken.
