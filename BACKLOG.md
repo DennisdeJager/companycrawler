@@ -14,6 +14,7 @@
 - [x] Mailto-adressen blijven beschikbaar in crawltekst en vector chunks zonder als losse pagina's te worden gecrawld.
 - [x] Dashboard scanbediening voor starten, pauzeren en stoppen toegevoegd; reset verwijdert website crawl-data inclusief graph chunks.
 - [x] Analysejobs draaien live op de achtergrond met actuele jobstatus, duurweergave en verwijderbare jobresultaten.
+- [x] Websitebeheer gebruikt modals voor nieuwe en bestaande websites; reset staat bij de dashboard-scanbediening.
 
 - [x] Knowledge Graph mindmap, crawler deduplicatie, scanstatistieken en instelbare parallelle crawlverwerking toegevoegd.
 - [x] Bedrijfslogo-detectie, Smawa huisstijl-logo, dark theme en hiërarchische dashboard tree toegevoegd.

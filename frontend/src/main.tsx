@@ -31,7 +31,8 @@ import {
   Square,
   Sun,
   Trash2,
-  Users
+  Users,
+  X
 } from 'lucide-react'
 import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
@@ -98,6 +99,7 @@ function App() {
   const [formCompany, setFormCompany] = useState('Example')
   const [formLogoUrl, setFormLogoUrl] = useState('')
   const [editWebsiteId, setEditWebsiteId] = useState<number | null>(null)
+  const [websiteDialogMode, setWebsiteDialogMode] = useState<'create' | 'edit' | null>(null)
   const [message, setMessage] = useState('Klaar om een website te scannen.')
   const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('companycrawler-theme') === 'dark' ? 'dark' : 'light')
 
@@ -229,12 +231,14 @@ function App() {
       setWebsites((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
       await selectWebsite(updated)
       setEditWebsiteId(null)
+      setWebsiteDialogMode(null)
       setMessage('Website bijgewerkt.')
       return updated
     }
     const created = await api.createWebsite(formUrl, formCompany, formLogoUrl)
     setWebsites((rows) => [created, ...rows])
     await selectWebsite(created)
+    setWebsiteDialogMode(null)
     setMessage('Website aangemaakt en actief geselecteerd.')
     return created
   }
@@ -247,7 +251,7 @@ function App() {
       setView('Dashboard')
       return
     }
-    const website = selectedWebsite?.url === formUrl && !editWebsiteId ? selectedWebsite : await saveWebsite()
+    const website = selectedWebsite ?? await saveWebsite()
     setScan({
       id: 0,
       website_id: website.id,
@@ -299,6 +303,32 @@ function App() {
     setDocuments([])
     setSelectedDocument(null)
     setMessage('Alle crawl-data voor deze website is verwijderd.')
+  }
+
+  function openNewWebsiteDialog() {
+    setEditWebsiteId(null)
+    setFormUrl('https://example.com')
+    setFormCompany('Example')
+    setFormLogoUrl('')
+    setWebsiteDialogMode('create')
+  }
+
+  function openEditWebsiteDialog(website: Website) {
+    setEditWebsiteId(website.id)
+    setFormUrl(website.url)
+    setFormCompany(website.company_name)
+    setFormLogoUrl(website.logo_url ?? '')
+    setWebsiteDialogMode('edit')
+  }
+
+  function closeWebsiteDialog() {
+    setWebsiteDialogMode(null)
+    setEditWebsiteId(null)
+    if (selectedWebsite) {
+      setFormUrl(selectedWebsite.url)
+      setFormCompany(selectedWebsite.company_name)
+      setFormLogoUrl(selectedWebsite.logo_url ?? '')
+    }
   }
 
   async function startAnalysis() {
@@ -416,26 +446,28 @@ function App() {
             startScan={startScan}
             pauseScan={pauseScan}
             stopScan={stopScan}
+            resetSelected={resetSelected}
           />
         )}
 
         {view === 'Websites' && (
           <WebsitesView
             company={formCompany}
+            closeWebsiteDialog={closeWebsiteDialog}
             deleteWebsite={deleteWebsite}
             detectName={detectName}
             editWebsiteId={editWebsiteId}
-            resetSelected={resetSelected}
             saveWebsite={saveWebsite}
             selectedWebsite={selectedWebsite}
             selectWebsite={selectWebsite}
+            openEditWebsiteDialog={openEditWebsiteDialog}
+            openNewWebsiteDialog={openNewWebsiteDialog}
             setCompany={setFormCompany}
-            setEditWebsiteId={setEditWebsiteId}
             setLogoUrl={setFormLogoUrl}
             setUrl={setFormUrl}
-            startScan={startScan}
             logoUrl={formLogoUrl}
             url={formUrl}
+            websiteDialogMode={websiteDialogMode}
             websites={websites}
           />
         )}
@@ -492,6 +524,7 @@ function Dashboard(props: {
   startScan: () => void
   pauseScan: () => void
   stopScan: () => void
+  resetSelected: () => void
 }) {
   return (
     <section className="dashboard-layout">
@@ -502,6 +535,8 @@ function Dashboard(props: {
         startScan={props.startScan}
         pauseScan={props.pauseScan}
         stopScan={props.stopScan}
+        resetSelected={props.resetSelected}
+        selectedWebsite={props.selectedWebsite}
       />
       <TreePanel documents={props.documents} selectedDocument={props.selectedDocument} setSelectedDocument={props.setSelectedDocument} />
       <Inspector document={props.selectedDocument} website={props.selectedWebsite} />
@@ -574,7 +609,9 @@ function ProgressPanel({
   message,
   startScan,
   pauseScan,
-  stopScan
+  stopScan,
+  resetSelected,
+  selectedWebsite
 }: {
   scan: Scan | null
   documents: DocumentItem[]
@@ -582,6 +619,8 @@ function ProgressPanel({
   startScan: () => void
   pauseScan: () => void
   stopScan: () => void
+  resetSelected?: () => void
+  selectedWebsite?: Website | null
 }) {
   const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
   const elapsedSeconds = scan ? scan.duration_seconds || secondsBetween(scan.started_at ?? scan.created_at, scan.completed_at) : 0
@@ -607,6 +646,7 @@ function ProgressPanel({
         <button className="primary" onClick={startScan}><Play size={17} /> Start</button>
         <button className="secondary" onClick={pauseScan} disabled={!canPause}><Pause size={17} /> Pauze</button>
         <button className="danger" onClick={stopScan} disabled={!canStop}><Square size={16} /> Stop</button>
+        {resetSelected && <button className="secondary" onClick={resetSelected} disabled={!selectedWebsite}><RefreshCw size={16} /> Reset</button>}
       </div>
     </div>
   )
@@ -732,26 +772,29 @@ function Inspector({ document, website }: { document: (DocumentItem | DocumentDe
 
 function WebsitesView(props: {
   company: string
+  closeWebsiteDialog: () => void
   deleteWebsite: (website: Website) => void
   detectName: () => void
   editWebsiteId: number | null
   logoUrl: string
-  resetSelected: () => void
+  openEditWebsiteDialog: (website: Website) => void
+  openNewWebsiteDialog: () => void
   saveWebsite: () => void
   selectedWebsite: Website | null
   selectWebsite: (website: Website) => void
   setCompany: (value: string) => void
-  setEditWebsiteId: (id: number | null) => void
   setLogoUrl: (value: string) => void
   setUrl: (value: string) => void
-  startScan: () => void
   url: string
+  websiteDialogMode: 'create' | 'edit' | null
   websites: Website[]
 }) {
   return (
-    <section className="split-layout">
-      <div className="panel">
+    <section className="panel websites-panel wide">
+      <div className="panel-heading-row">
         <div className="panel-title"><Globe2 size={18} /> Websites</div>
+        <button className="primary" onClick={props.openNewWebsiteDialog}><Plus size={17} /> Nieuwe website</button>
+      </div>
         <div className="website-list">
           {props.websites.map((website) => (
             <div className={props.selectedWebsite?.id === website.id ? 'website-card selected' : 'website-card'} key={website.id}>
@@ -763,46 +806,40 @@ function WebsitesView(props: {
                 <small>{website.url}</small>
               </button>
               <div className="row-actions">
-                <button title="Bewerken" onClick={() => {
-                  props.setEditWebsiteId(website.id)
-                  props.setUrl(website.url)
-                  props.setCompany(website.company_name)
-                  props.setLogoUrl(website.logo_url ?? '')
-                }}><Pencil size={16} /></button>
+                <button title="Bewerken" onClick={() => props.openEditWebsiteDialog(website)}><Pencil size={16} /></button>
                 <button title="Verwijderen" onClick={() => props.deleteWebsite(website)}><Trash2 size={16} /></button>
               </div>
             </div>
           ))}
-          {props.websites.length === 0 && <p className="empty">Nog geen websites. Maak rechts je eerste website aan.</p>}
-        </div>
+          {props.websites.length === 0 && <p className="empty">Nog geen websites. Maak je eerste website aan.</p>}
       </div>
 
-      <div className="panel form-panel">
-        <div className="panel-title"><Save size={18} /> {props.editWebsiteId ? 'Website bewerken' : 'Nieuwe website'}</div>
-        <label>Website URL</label>
-        <div className="input-row">
-          <input value={props.url} onChange={(event) => props.setUrl(event.target.value)} />
-          <button className="icon-button" onClick={props.detectName} title="Detecteer bedrijfsnaam"><Search size={17} /></button>
+      {props.websiteDialogMode && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={props.closeWebsiteDialog}>
+          <div className="modal-panel website-modal" role="dialog" aria-modal="true" aria-labelledby="website-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="panel-heading-row">
+              <div className="panel-title" id="website-dialog-title"><Save size={18} /> {props.editWebsiteId ? 'Website bewerken' : 'Nieuwe website'}</div>
+              <button className="icon-button" onClick={props.closeWebsiteDialog} title="Sluiten"><X size={17} /></button>
+            </div>
+            <label>Website URL</label>
+            <div className="input-row">
+              <input value={props.url} onChange={(event) => props.setUrl(event.target.value)} autoFocus />
+              <button className="icon-button" onClick={props.detectName} title="Detecteer bedrijfsnaam"><Search size={17} /></button>
+            </div>
+            <label>Bedrijfsnaam</label>
+            <input value={props.company} onChange={(event) => props.setCompany(event.target.value)} />
+            <label>Logo URL</label>
+            <div className="input-row">
+              <input value={props.logoUrl} onChange={(event) => props.setLogoUrl(event.target.value)} placeholder="Automatisch gevonden of handmatig invullen" />
+              <span className="logo-preview">{props.logoUrl ? <img src={props.logoUrl} alt="" /> : null}</span>
+            </div>
+            <div className="button-row modal-actions">
+              <button className="secondary" onClick={props.closeWebsiteDialog}>Annuleren</button>
+              <button className="primary" onClick={props.saveWebsite}><Save size={17} /> Opslaan</button>
+            </div>
+          </div>
         </div>
-        <label>Bedrijfsnaam</label>
-        <input value={props.company} onChange={(event) => props.setCompany(event.target.value)} />
-        <label>Logo URL</label>
-        <div className="input-row">
-          <input value={props.logoUrl} onChange={(event) => props.setLogoUrl(event.target.value)} placeholder="Automatisch gevonden of handmatig invullen" />
-          <span className="logo-preview">{props.logoUrl ? <img src={props.logoUrl} alt="" /> : null}</span>
-        </div>
-        <div className="button-row">
-          <button className="primary" onClick={props.saveWebsite}><Save size={17} /> Opslaan</button>
-          <button className="secondary" onClick={props.startScan}><Play size={17} /> Start scan</button>
-        </div>
-        <div className="button-row">
-          <button className="secondary" onClick={() => {
-            props.setEditWebsiteId(null)
-            props.setLogoUrl('')
-          }}>Nieuw formulier</button>
-          <button className="danger" onClick={props.resetSelected}><RefreshCw size={16} /> Reset actieve website</button>
-        </div>
-      </div>
+      )}
     </section>
   )
 }
