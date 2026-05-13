@@ -166,6 +166,7 @@ export const api = {
   analyses: (websiteId: number) => request<AnalysisRun[]>(`/api/websites/${websiteId}/analyses`),
   startAnalysis: (websiteId: number) => request<AnalysisRun>(`/api/websites/${websiteId}/analyses`, { method: 'POST' }),
   analysis: (analysisId: number) => request<AnalysisRun>(`/api/analyses/${analysisId}`),
+  deleteAnalysis: (analysisId: number) => request<{ status: string }>(`/api/analyses/${analysisId}`, { method: 'DELETE' }),
   deleteAnalysisJobResult: (jobResultId: number) => request<{ status: string }>(`/api/analysis-job-results/${jobResultId}`, { method: 'DELETE' }),
   mcp: () => request<{ tools: { name: string; description: string }[] }>('/mcp')
 }

@@ -506,6 +506,18 @@ def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
     return serialize_analysis_run(run)
 
 
+@router.delete("/analyses/{analysis_id}")
+def delete_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+    run = db.get(AnalysisRun, analysis_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    if run.status in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="Analysis is still running")
+    db.delete(run)
+    db.commit()
+    return {"status": "deleted"}
+
+
 async def _run_analysis_background(analysis_id: int) -> None:
     db = SessionLocal()
     try:

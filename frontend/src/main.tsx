@@ -414,6 +414,16 @@ function App() {
     setMessage('Jobresultaat verwijderd.')
   }
 
+  async function deleteAnalysis(analysisId: number) {
+    const analysis = analyses.find((item) => item.id === analysisId)
+    if (!analysis || ['queued', 'running'].includes(analysis.status) || !window.confirm(`Analyse #${analysis.id} en alle jobs/resultaten verwijderen?`)) return
+    await api.deleteAnalysis(analysisId)
+    const remaining = analyses.filter((item) => item.id !== analysisId)
+    setAnalyses(remaining)
+    setActiveAnalysis((current) => (current?.id === analysisId ? (remaining[0] ?? null) : current))
+    setMessage('Analyse en alle jobresultaten verwijderd.')
+  }
+
   function toggleTheme() {
     setTheme((current) => {
       const next = current === 'dark' ? 'light' : 'dark'
@@ -529,6 +539,7 @@ function App() {
           <AnalysisView
             analyses={analyses}
             activeAnalysis={activeAnalysis}
+            deleteAnalysis={deleteAnalysis}
             deleteAnalysisJobResult={deleteAnalysisJobResult}
             selectedWebsite={selectedWebsite}
             setActiveAnalysis={setActiveAnalysis}
@@ -1248,6 +1259,7 @@ function connectorPath(from: MindNode, to: MindNode) {
 function AnalysisView({
   analyses,
   activeAnalysis,
+  deleteAnalysis,
   deleteAnalysisJobResult,
   selectedWebsite,
   setActiveAnalysis,
@@ -1255,6 +1267,7 @@ function AnalysisView({
 }: {
   analyses: AnalysisRun[]
   activeAnalysis: AnalysisRun | null
+  deleteAnalysis: (analysisId: number) => void
   deleteAnalysisJobResult: (jobResultId: number) => void
   selectedWebsite: Website | null
   setActiveAnalysis: (analysis: AnalysisRun) => void
@@ -1296,15 +1309,28 @@ function AnalysisView({
         )}
         <div className="table-list compact-list">
           {analyses.map((analysis) => (
-            <button
+            <div
               className={activeAnalysis?.id === analysis.id ? 'table-row analysis-run-row selected' : 'table-row analysis-run-row'}
               key={analysis.id}
               onClick={() => setActiveAnalysis(analysis)}
             >
-              <strong>Analyse #{analysis.id}</strong>
-              <span>{analysis.status}</span>
-              <small>{new Date(analysis.created_at).toLocaleString()}</small>
-            </button>
+              <button className="analysis-run-main" onClick={() => setActiveAnalysis(analysis)}>
+                <strong>Analyse #{analysis.id}</strong>
+                <span>{analysis.status}</span>
+                <small>{new Date(analysis.created_at).toLocaleString()}</small>
+              </button>
+              <button
+                className="icon-button danger"
+                title="Analyse en alle jobs verwijderen"
+                disabled={analysis.status === 'queued' || analysis.status === 'running'}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  deleteAnalysis(analysis.id)
+                }}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
           ))}
         </div>
       </div>

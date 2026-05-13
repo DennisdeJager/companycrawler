@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
-from app.api.routes import delete_analysis_job_result
+from app.api.routes import delete_analysis, delete_analysis_job_result
 from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, Website
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts
 
@@ -39,6 +39,18 @@ def test_render_prompt_replaces_company_variables(db_session) -> None:
     )
 
     assert rendered == "Acme uit Utrecht in Midden-Nederland"
+
+
+def test_normalize_variables_ignores_unknown_company_name(db_session) -> None:
+    service = AnalysisService(db_session)
+    website = Website(url="https://example.com", company_name="Example BV", logo_url="")
+
+    variables = service._normalize_variables(
+        {"Bedrijfsnaam": "onbekend", "Bedrijfsplaats": "niet gevonden", "Regio": "Noord-Holland"},
+        website,
+    )
+
+    assert variables == {"Bedrijfsnaam": "Example BV", "Bedrijfsplaats": "onbekend", "Regio": "Noord-Holland"}
 
 
 @pytest.mark.asyncio
@@ -88,3 +100,26 @@ def test_delete_analysis_job_result_removes_result_and_insight(db_session) -> No
     assert response == {"status": "deleted"}
     assert db_session.get(AnalysisJobResult, job.id) is None
     assert db_session.query(AnalysisInsight).filter(AnalysisInsight.analysis_run_id == run.id).count() == 0
+
+
+def test_delete_analysis_removes_jobs_and_insights(db_session) -> None:
+    seed_default_analysis_prompts(db_session)
+    website = Website(url="https://example.com", company_name="Example", logo_url="")
+    db_session.add(website)
+    db_session.commit()
+    db_session.refresh(website)
+    run = AnalysisRun(website_id=website.id, status="completed")
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    job = AnalysisJobResult(analysis_run_id=run.id, prompt_id="job_2_bedrijfsprofiel", status="completed", result_text="klaar")
+    insight = AnalysisInsight(analysis_run_id=run.id, website_id=website.id, prompt_id="job_2_bedrijfsprofiel", text="klaar")
+    db_session.add_all([job, insight])
+    db_session.commit()
+
+    response = delete_analysis(run.id, db_session)
+
+    assert response == {"status": "deleted"}
+    assert db_session.get(AnalysisRun, run.id) is None
+    assert db_session.query(AnalysisJobResult).count() == 0
+    assert db_session.query(AnalysisInsight).count() == 0

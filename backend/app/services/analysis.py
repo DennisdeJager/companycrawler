@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, ContentChunk, Document, Website
-from app.services.ai import AIService, embedding_to_json
+from app.services.ai import AIService, embedding_from_json, embedding_to_json
+from app.services.search import cosine
 
 
 DEFAULT_ANALYSIS_PROMPTS: list[dict[str, Any]] = [
@@ -374,7 +375,7 @@ class AnalysisService:
         self.db.commit()
         self.db.refresh(run)
         try:
-            context, sources = self._build_context(run.website_id)
+            context, sources = await self._build_context(run.website_id)
             variables = await self._run_job(run, "job_1_code_fields", {}, context, sources, include_general=False)
             extracted = self._normalize_variables(variables, website)
             run.extracted_variables = json.dumps(extracted, ensure_ascii=False)
@@ -467,7 +468,10 @@ class AnalysisService:
         )
         self.db.commit()
 
-    def _build_context(self, website_id: int) -> tuple[str, list[dict[str, Any]]]:
+    async def _build_context(self, website_id: int) -> tuple[str, list[dict[str, Any]]]:
+        website = self.db.get(Website, website_id)
+        if not website:
+            raise ValueError("Website not found")
         documents = (
             self.db.query(Document)
             .filter(Document.website_id == website_id)
@@ -476,7 +480,7 @@ class AnalysisService:
             .all()
         )
         document_ids = [document.id for document in documents]
-        chunks = []
+        chunks: list[tuple[ContentChunk, Document]] = []
         if document_ids:
             chunks = (
                 self.db.query(ContentChunk, Document)
@@ -486,16 +490,97 @@ class AnalysisService:
                 .limit(80)
                 .all()
             )
+        semantic_chunks = await self._semantic_context_chunks(
+            website,
+            "bedrijfsnaam bedrijfsplaats regio vestigingsplaats adres contact over ons organisatie profiel",
+            document_ids,
+            limit=24,
+        )
+        prioritized_documents = self._prioritize_documents(documents)
         sources = [
             {"document_id": doc.id, "title": doc.title, "url": doc.source_url, "summary": doc.summary}
-            for doc in documents[:20]
+            for doc in prioritized_documents[:20]
         ]
-        parts = []
-        for doc in documents:
+        parts = [
+            "== Huidige bedrijfscontext ==",
+            f"Website ID: {website.id}",
+            f"Website URL: {website.url}",
+            f"Bekende bedrijfsnaam uit websiteprofiel: {website.company_name or 'onbekend'}",
+            "Gebruik deze website en alleen bijbehorende documenten als primaire context voor dit bedrijf.",
+        ]
+        for chunk, doc, score in semantic_chunks:
+            parts.append(
+                f"[Semantisch relevant fragment {chunk.id} uit document {doc.id}, score {score:.4f}] "
+                f"{doc.title}\nURL: {doc.source_url}\nFragment: {chunk.text[:1100]}"
+            )
+        for doc in prioritized_documents:
             parts.append(f"[Document {doc.id}] {doc.title}\nURL: {doc.source_url}\nSamenvatting: {doc.summary}\nTekst: {doc.text_content[:1200]}")
+        seen_semantic = {chunk.id for chunk, _, _ in semantic_chunks}
         for chunk, doc in chunks:
+            if chunk.id in seen_semantic:
+                continue
             parts.append(f"[Chunk {chunk.id} uit document {doc.id}] {doc.title}\nURL: {doc.source_url}\nFragment: {chunk.text[:900]}")
         return "\n\n---\n\n".join(parts)[:45000], sources
+
+    async def _semantic_context_chunks(
+        self,
+        website: Website,
+        query: str,
+        document_ids: list[int],
+        limit: int,
+    ) -> list[tuple[ContentChunk, Document, float]]:
+        if not document_ids:
+            return []
+        query_embedding = await self.ai.embed(f"{website.company_name} {website.url} {query}")
+        scored = []
+        rows = (
+            self.db.query(ContentChunk, Document)
+            .join(Document, ContentChunk.document_id == Document.id)
+            .filter(ContentChunk.document_id.in_(document_ids))
+            .all()
+        )
+        for chunk, document in rows:
+            vector = embedding_from_json(chunk.embedding)
+            vector_score = cosine(query_embedding, vector) if vector else 0.0
+            text_score = self._company_context_score(document, chunk.text)
+            scored.append((vector_score + text_score, chunk, document))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [(chunk, document, score) for score, chunk, document in scored[:limit] if score > 0]
+
+    def _prioritize_documents(self, documents: list[Document]) -> list[Document]:
+        return sorted(
+            documents,
+            key=lambda document: self._company_context_score(document, document.text_content or document.summary),
+            reverse=True,
+        )
+
+    def _company_context_score(self, document: Document, text: str) -> float:
+        haystack = " ".join([document.title, document.source_url, document.file_name, document.summary, text[:3000]]).lower()
+        score = 0.0
+        keywords = [
+            "contact",
+            "adres",
+            "vestiging",
+            "plaats",
+            "regio",
+            "over ons",
+            "organisatie",
+            "bedrijf",
+            "bedrijfsnaam",
+            "kvk",
+            "postcode",
+            "telefoon",
+        ]
+        for keyword in keywords:
+            if keyword in haystack:
+                score += 0.15
+        if re.search(r"\b[1-9][0-9]{3}\s?[a-z]{2}\b", haystack, flags=re.I):
+            score += 0.4
+        if re.search(r"\b(tel|telefoon|e-mail|email)\b", haystack, flags=re.I):
+            score += 0.2
+        if document.source_url.rstrip("/").count("/") <= 3:
+            score += 0.25
+        return score
 
     def _render_prompt(self, prompt_text: str, variables: dict[str, str]) -> str:
         rendered = prompt_text
@@ -516,11 +601,20 @@ class AnalysisService:
         return None
 
     def _normalize_variables(self, value: dict[str, Any], website: Website) -> dict[str, str]:
+        company_name = self._clean_variable(value.get("Bedrijfsnaam"))
+        company_place = self._clean_variable(value.get("Bedrijfsplaats"))
+        region = self._clean_variable(value.get("Regio"))
         return {
-            "Bedrijfsnaam": str(value.get("Bedrijfsnaam") or website.company_name or "onbekend"),
-            "Bedrijfsplaats": str(value.get("Bedrijfsplaats") or "onbekend"),
-            "Regio": str(value.get("Regio") or "onbekend"),
+            "Bedrijfsnaam": company_name or website.company_name or "onbekend",
+            "Bedrijfsplaats": company_place or "onbekend",
+            "Regio": region or "onbekend",
         }
+
+    def _clean_variable(self, value: Any) -> str:
+        cleaned = str(value or "").strip()
+        if cleaned.lower() in {"", "onbekend", "unknown", "n/a", "niet gevonden", "null", "none"}:
+            return ""
+        return cleaned
 
     def _summarize_result(self, value: Any) -> str:
         if isinstance(value, dict):

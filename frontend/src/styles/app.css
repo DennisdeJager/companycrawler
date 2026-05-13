@@ -730,10 +730,29 @@ button.compact {
   width: 100%;
   text-align: left;
   cursor: pointer;
+  grid-template-columns: minmax(0, 1fr) 42px;
 }
 .analysis-run-row.selected {
   border-color: rgba(15, 139, 141, 0.45);
   background: #edfafa;
+}
+.analysis-run-main {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(82px, 0.5fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.analysis-run-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .analysis-live-stats {
   display: grid;
