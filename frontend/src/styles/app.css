@@ -34,8 +34,8 @@ button, input, select, textarea { font: inherit; }
 }
 
 .sidebar {
-  background: #0f1722;
-  border-right: 1px solid #1f2c3a;
+  background: #ffffff;
+  border-right: 1px solid #dfe6ec;
   padding: 24px 22px;
 }
 
@@ -47,7 +47,7 @@ button, input, select, textarea { font: inherit; }
   display: block;
   width: min(100%, 276px);
   height: auto;
-  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.18));
+  filter: none;
   object-fit: contain;
 }
 
@@ -55,7 +55,7 @@ nav { display: grid; gap: 5px; }
 nav button {
   border: 0;
   background: transparent;
-  color: #c7d2de;
+  color: #43505b;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -66,8 +66,8 @@ nav button {
   text-align: left;
 }
 nav button.active, nav button:hover {
-  background: rgba(139, 213, 213, 0.12);
-  color: #ffffff;
+  background: #e9f6f5;
+  color: #0f6f71;
 }
 
 .workspace {
@@ -1180,9 +1180,7 @@ button.compact {
   color: #8bd5d5;
 }
 .theme-dark .smawa-mark {
-  filter:
-    drop-shadow(0 0 1px rgba(232, 238, 242, 0.45))
-    drop-shadow(0 0 18px rgba(88, 195, 196, 0.24));
+  filter: none;
 }
 .theme-dark .sidebar,
 .theme-dark .panel,
@@ -1216,7 +1214,7 @@ button.compact {
   color: #9cafbd;
 }
 .theme-dark nav button {
-  color: #b6c3cc;
+  color: #c7d2de;
 }
 .theme-dark nav button.active,
 .theme-dark nav button:hover,
