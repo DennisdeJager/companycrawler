@@ -58,6 +58,9 @@ export type ProviderSettings = {
   google_auth_enabled: boolean
   google_client_secret_configured: boolean
   google_client_id: string
+  app_url: string
+  app_url_origin: string
+  google_required_origins: string[]
   default_summary_provider: string
   default_summary_model: string
   default_embedding_provider: string

@@ -44,6 +44,18 @@ companycrawler.smawa.nl {
 
 Wanneer API en frontend op hetzelfde domein draaien, proxyt nginx `/api` en `/mcp` door naar de backend.
 
+## Google OAuth
+
+De webconsole gebruikt Google Identity Services met een ID-token callback. Hiervoor is een OAuth Client ID van het type `Web application` nodig.
+
+Voor dev/public login:
+
+- Authorized JavaScript origins: `https://companycrawler.smawa.nl`
+- Authorized domains: `smawa.nl`
+- Authorized redirect URIs: niet nodig voor deze callback-flow
+
+De Settings pagina toont de actieve browser-origin en de `APP_URL` origin uit `.env`, zodat zichtbaar is welke origin in Google Cloud geregistreerd moet zijn.
+
 ## GitHub
 
 Repository: `https://github.com/DennisdeJager/companycrawler`

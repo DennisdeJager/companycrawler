@@ -111,6 +111,9 @@ class ProviderSettingsRead(BaseModel):
     google_auth_enabled: bool
     google_client_secret_configured: bool
     google_client_id: str
+    app_url: str
+    app_url_origin: str
+    google_required_origins: list[str]
     default_summary_provider: str
     default_summary_model: str
     default_embedding_provider: str

@@ -256,6 +256,44 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 .status-ok { background: #eaf7ef; color: #176638; border: 1px solid #b7e1c5; }
 .status-warn { background: #fff8ea; color: #6f4b00; border: 1px solid #f3d7a1; }
 
+.diagnostic-box {
+  border: 1px solid #dfe6ec;
+  background: #fbfcfd;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.diagnostic-box strong {
+  display: block;
+  margin-bottom: 8px;
+}
+.diagnostic-box dl {
+  margin: 0 0 10px;
+}
+.origin-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+.origin-list code {
+  display: block;
+  border: 1px solid #dfe6ec;
+  background: #ffffff;
+  color: #24313a;
+  border-radius: 8px;
+  padding: 9px;
+  overflow-wrap: anywhere;
+}
+.inline-warning {
+  background: #fff8ea;
+  border: 1px solid #f3d7a1;
+  border-radius: 8px;
+  color: #6f4b00;
+  font-size: 13px;
+  margin: 8px 0;
+  padding: 9px;
+}
+
 .guest-shell {
   min-height: 100vh;
   display: grid;
@@ -270,6 +308,10 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
   padding: 28px;
   text-align: center;
   box-shadow: 0 14px 40px rgba(28, 42, 56, 0.08);
+}
+.guest-panel .diagnostic-box {
+  margin-top: 18px;
+  text-align: left;
 }
 .google-login-slot {
   display: flex;

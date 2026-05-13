@@ -1,4 +1,5 @@
 from datetime import datetime
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -9,6 +10,13 @@ from app.models import AppSetting
 
 SECRET_KEYS = {"openai_api_key", "openrouter_api_key", "google_client_secret"}
 ENV_MANAGED_KEYS = set(ENV_KEY_BY_SETTING)
+
+
+def _origin_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def get_setting(db: Session | None, key: str, default: str = "") -> str:
@@ -69,14 +77,16 @@ def provider_status(db: Session) -> dict:
         warnings.append("Geen OpenAI API key ingesteld. OpenAI embeddings en OpenAI modelcatalogus zijn niet live beschikbaar.")
     if not google_client_id:
         warnings.append("Google login is niet geconfigureerd. Development login gebruikt tijdelijk een e-mailadres.")
-    elif not google_client_secret:
-        warnings.append("Google Client ID is ingesteld, maar Google Client Secret ontbreekt nog in beheer.")
+    app_url_origin = _origin_from_url(settings.app_url)
     return {
         "openai_configured": bool(openai_key),
         "openrouter_configured": bool(openrouter_key),
         "google_auth_enabled": bool(google_client_id),
         "google_client_secret_configured": bool(google_client_secret),
         "google_client_id": google_client_id,
+        "app_url": settings.app_url,
+        "app_url_origin": app_url_origin,
+        "google_required_origins": [origin for origin in [app_url_origin] if origin],
         "default_summary_provider": summary_provider,
         "default_summary_model": summary_model,
         "default_embedding_provider": embedding_provider,

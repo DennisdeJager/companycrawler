@@ -59,6 +59,9 @@ const emptySettings: ProviderSettings = {
   google_auth_enabled: false,
   google_client_secret_configured: false,
   google_client_id: '',
+  app_url: '',
+  app_url_origin: '',
+  google_required_origins: [],
   default_summary_provider: 'openai',
   default_summary_model: 'gpt-5.4-mini',
   default_embedding_provider: 'openai',
@@ -221,6 +224,7 @@ function App() {
           <h1>Inloggen met Google</h1>
           <p>Gebruik je Google account om toegang tot companycrawler aan te vragen.</p>
           <div id="google-login" className="google-login-slot" />
+          <GoogleOriginDiagnostics settings={settings} />
         </section>
       </main>
     )
@@ -300,7 +304,7 @@ function App() {
         {view === 'Users' && <UsersView users={users} refresh={async () => setUsers(await api.users())} />}
         {view === 'Settings' && (
           <SettingsView
-            key={`${settings.google_client_id}:${settings.default_summary_model}:${settings.default_embedding_model}`}
+            key={`${settings.google_client_id}:${settings.app_url_origin}:${settings.default_summary_model}:${settings.default_embedding_model}`}
             settings={settings}
             setSettings={setSettings}
             refresh={load}
@@ -593,12 +597,35 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
         <StatusLine ok={settings.google_auth_enabled} label="Google login" />
         <label>Google Client ID</label>
         <input value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} placeholder="Google OAuth Client ID" />
-        <StatusLine ok={settings.google_client_secret_configured} label="Google Client Secret" />
-        <label>Google Client Secret</label>
-        <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Google OAuth Client Secret'} />
-        <p className="body-text">Zodra de Google Client ID is ingesteld, valideert de backend echte Google credentials. Secrets worden in .env opgeslagen en niet teruggetoond.</p>
+        <GoogleOriginDiagnostics settings={settings} />
+        <StatusLine ok={true} label="Google Client Secret optioneel" />
+        <label>Google Client Secret optioneel</label>
+        <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Optioneel ingesteld, laat leeg om te behouden' : 'Niet nodig voor deze login-flow'} />
+        <p className="body-text">De frontend ontvangt een Google ID token en de backend valideert dit met de Client ID. Secrets worden alleen in .env opgeslagen en niet teruggetoond.</p>
       </div>
     </section>
+  )
+}
+
+function GoogleOriginDiagnostics({ settings }: { settings: ProviderSettings }) {
+  const browserOrigin = window.location.origin
+  const requiredOrigins = Array.from(new Set([browserOrigin, ...settings.google_required_origins].filter(Boolean)))
+  const appUrlMismatch = Boolean(settings.app_url_origin && browserOrigin !== settings.app_url_origin)
+
+  return (
+    <div className="diagnostic-box">
+      <strong>Google Cloud origins</strong>
+      <dl>
+        <dt>Browser origin</dt><dd>{browserOrigin}</dd>
+        <dt>APP_URL origin</dt><dd>{settings.app_url_origin || 'Niet ingesteld'}</dd>
+      </dl>
+      {appUrlMismatch && <p className="inline-warning">APP_URL komt niet overeen met de origin waarop je deze console gebruikt.</p>}
+      <p className="body-text">Zet deze Authorized JavaScript origin(s) in Google Cloud bij deze Web application Client ID:</p>
+      <div className="origin-list">
+        {requiredOrigins.map((origin) => <code key={origin}>{origin}</code>)}
+      </div>
+      <p className="body-text">Voor deze login-flow is geen Authorized redirect URI nodig. Voeg bij Authorized domains het hoofddomein toe, bijvoorbeeld smawa.nl.</p>
+    </div>
   )
 }
 
