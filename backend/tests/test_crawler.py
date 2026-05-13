@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -62,6 +63,27 @@ def test_content_hash_normalizes_whitespace_and_case() -> None:
     crawler = object.__new__(CompanyCrawler)
 
     assert crawler._content_hash("Contact  test@example.com") == crawler._content_hash(" contact\nTEST@example.com ")
+
+
+def test_extract_mailto_addresses_keeps_emails_available_for_vectors() -> None:
+    crawler = object.__new__(CompanyCrawler)
+    soup = BeautifulSoup(
+        """
+        <html><body>
+          <a href="mailto:info@example.com?subject=Hallo">Mail ons</a>
+          <a href="mailto:sales@example.com;support@example.com">Team</a>
+          <a href="mailto:INFO@example.com">Dubbel</a>
+          <a href="tel:+31123456789">Bel ons</a>
+        </body></html>
+        """,
+        "html.parser",
+    )
+
+    assert crawler._extract_mailto_addresses(soup) == [
+        "info@example.com",
+        "sales@example.com",
+        "support@example.com",
+    ]
 
 
 def make_scan_session() -> tuple[Session, Website, ScanJob]:

@@ -6,6 +6,7 @@
 - [x] MCP semantische zoekopdracht gerepareerd door de SQLAlchemy join expliciet te maken.
 - [x] Knowledge Graph mindmap vervangen door inklapbare, sleepbare en zoombare website explorer.
 - [x] Mailto-links uit crawls geweerd, duplicate graph nodes op content-hash samengevoegd en content inspector scrollbaar gemaakt.
+- [x] Mailto-adressen blijven beschikbaar in crawltekst en vector chunks zonder als losse pagina's te worden gecrawld.
 - [x] Dashboard scanbediening voor starten, pauzeren en stoppen toegevoegd; reset verwijdert website crawl-data inclusief graph chunks.
 
 - [x] Knowledge Graph mindmap, crawler deduplicatie, scanstatistieken en instelbare parallelle crawlverwerking toegevoegd.

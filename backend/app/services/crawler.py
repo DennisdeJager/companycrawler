@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from urllib import robotparser
-from urllib.parse import urldefrag, urljoin, urlparse, urlsplit, urlunsplit
+from urllib.parse import unquote, urldefrag, urljoin, urlparse, urlsplit, urlunsplit
 
 import httpx
 from bs4 import BeautifulSoup
@@ -235,6 +235,12 @@ class CompanyCrawler:
                 if self._is_crawlable_url(anchor.get("href"))
             ]
             text = soup.get_text(" ", strip=True)
+            mailto_addresses = self._extract_mailto_addresses(soup)
+            if mailto_addresses:
+                known_text = text.lower()
+                missing_addresses = [address for address in mailto_addresses if address.lower() not in known_text]
+                if missing_addresses:
+                    text = f"{text} Emailadressen: {', '.join(missing_addresses)}"
             return FetchedContent(str(response.url), title, content_type or "text/html", text, links)
 
         if extension not in SUPPORTED_FILE_EXTENSIONS:
@@ -345,6 +351,25 @@ class CompanyCrawler:
     def _content_hash(self, text: str) -> str:
         clean = re.sub(r"\s+", " ", text).strip().lower()
         return hashlib.sha256(clean.encode("utf-8")).hexdigest()
+
+    def _extract_mailto_addresses(self, soup: BeautifulSoup) -> list[str]:
+        addresses: list[str] = []
+        seen: set[str] = set()
+        for anchor in soup.find_all("a", href=True):
+            href = str(anchor.get("href", "")).strip()
+            if not href.lower().startswith("mailto:"):
+                continue
+            mailto_value = unquote(href[7:].split("?", 1)[0]).strip()
+            for address in re.split(r"[,;]\s*", mailto_value):
+                clean_address = address.strip()
+                if not re.fullmatch(r"[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+", clean_address):
+                    continue
+                key = clean_address.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                addresses.append(clean_address)
+        return addresses
 
     def _find_duplicate_document(self, db: Session, website_id: int, text_hash: str, exclude_document_id: int | None = None) -> Document | None:
         if not text_hash:
