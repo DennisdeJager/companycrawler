@@ -26,19 +26,6 @@ import {
 import { api, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import './styles/app.css'
 
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: { client_id: string; callback: (response: { credential: string }) => void }) => void
-          renderButton: (element: HTMLElement | null, options: { theme: string; size: string; width: number }) => void
-        }
-      }
-    }
-  }
-}
-
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'API Docs' | 'MCP Server' | 'AI Models' | 'Users' | 'Settings'
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
@@ -61,7 +48,8 @@ const emptySettings: ProviderSettings = {
   google_client_id: '',
   app_url: '',
   app_url_origin: '',
-  google_required_origins: [],
+  google_redirect_uri: '',
+  google_authorized_domains: [],
   default_summary_provider: 'openai',
   default_summary_model: 'gpt-5.4-mini',
   default_embedding_provider: 'openai',
@@ -119,34 +107,20 @@ function App() {
 
   useEffect(() => {
     api.providerSettings()
-      .then((providerSettings) => {
+      .then(async (providerSettings) => {
         setSettings(providerSettings)
         if (!providerSettings.google_auth_enabled) {
           return api.login('admin@example.com').then(setUser).then(load)
+        }
+        const loggedIn = await api.session().catch(() => null)
+        if (loggedIn) {
+          setUser(loggedIn)
+          await load()
         }
         return undefined
       })
       .catch((error) => setMessage(error.message))
   }, [])
-
-  useEffect(() => {
-    if (user || !settings.google_auth_enabled || !settings.google_client_id) return
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    script.onload = () => {
-      window.google?.accounts.id.initialize({
-        client_id: settings.google_client_id,
-        callback: async (response) => {
-          const loggedIn = await api.login(response.credential)
-          setUser(loggedIn)
-          await load()
-        }
-      })
-      window.google?.accounts.id.renderButton(document.getElementById('google-login'), { theme: 'outline', size: 'large', width: 280 })
-    }
-    document.body.appendChild(script)
-  }, [settings.google_auth_enabled, settings.google_client_id, user])
 
   useEffect(() => {
     if (!scan || ['completed', 'failed'].includes(scan.status)) return
@@ -223,7 +197,7 @@ function App() {
           <ShieldCheck size={34} />
           <h1>Inloggen met Google</h1>
           <p>Gebruik je Google account om toegang tot companycrawler aan te vragen.</p>
-          <div id="google-login" className="google-login-slot" />
+          <a className="google-login-button" href="/api/auth/google/start">Inloggen met Google</a>
           <GoogleOriginDiagnostics settings={settings} />
         </section>
       </main>
@@ -598,10 +572,10 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
         <label>Google Client ID</label>
         <input value={googleClientId} onChange={(event) => setGoogleClientId(event.target.value)} placeholder="Google OAuth Client ID" />
         <GoogleOriginDiagnostics settings={settings} />
-        <StatusLine ok={true} label="Google Client Secret optioneel" />
-        <label>Google Client Secret optioneel</label>
-        <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Optioneel ingesteld, laat leeg om te behouden' : 'Niet nodig voor deze login-flow'} />
-        <p className="body-text">De frontend ontvangt een Google ID token en de backend valideert dit met de Client ID. Secrets worden alleen in .env opgeslagen en niet teruggetoond.</p>
+        <StatusLine ok={settings.google_client_secret_configured} label="Google Client Secret" />
+        <label>Google Client Secret</label>
+        <input type="password" value={googleClientSecret} onChange={(event) => setGoogleClientSecret(event.target.value)} placeholder={settings.google_client_secret_configured ? 'Ingesteld, laat leeg om te behouden' : 'Vereist voor server-side redirect login'} />
+        <p className="body-text">De backend wisselt de Google authorization code om voor een ID token en zet daarna een sessiecookie. Secrets worden alleen in .env opgeslagen en niet teruggetoond.</p>
       </div>
     </section>
   )
@@ -609,22 +583,24 @@ function SettingsView({ settings, setSettings, refresh }: { settings: ProviderSe
 
 function GoogleOriginDiagnostics({ settings }: { settings: ProviderSettings }) {
   const browserOrigin = window.location.origin
-  const requiredOrigins = Array.from(new Set([browserOrigin, ...settings.google_required_origins].filter(Boolean)))
+  const requiredDomains = settings.google_authorized_domains
   const appUrlMismatch = Boolean(settings.app_url_origin && browserOrigin !== settings.app_url_origin)
 
   return (
     <div className="diagnostic-box">
-      <strong>Google Cloud origins</strong>
+      <strong>Google Cloud redirect</strong>
       <dl>
         <dt>Browser origin</dt><dd>{browserOrigin}</dd>
         <dt>APP_URL origin</dt><dd>{settings.app_url_origin || 'Niet ingesteld'}</dd>
+        <dt>Redirect URI</dt><dd>{settings.google_redirect_uri || 'Niet ingesteld'}</dd>
       </dl>
       {appUrlMismatch && <p className="inline-warning">APP_URL komt niet overeen met de origin waarop je deze console gebruikt.</p>}
-      <p className="body-text">Zet deze Authorized JavaScript origin(s) in Google Cloud bij deze Web application Client ID:</p>
+      <p className="body-text">Zet deze Authorized redirect URI in Google Cloud bij deze Web application Client ID:</p>
       <div className="origin-list">
-        {requiredOrigins.map((origin) => <code key={origin}>{origin}</code>)}
+        <code>{settings.google_redirect_uri || '-'}</code>
       </div>
-      <p className="body-text">Voor deze login-flow is geen Authorized redirect URI nodig. Voeg bij Authorized domains het hoofddomein toe, bijvoorbeeld smawa.nl.</p>
+      <p className="body-text">Authorized JavaScript origins zijn niet nodig voor deze server-side redirect-flow.</p>
+      <p className="body-text">Voeg bij Authorized domains toe: {requiredDomains.length ? requiredDomains.join(', ') : 'het hoofddomein van APP_URL'}.</p>
     </div>
   )
 }

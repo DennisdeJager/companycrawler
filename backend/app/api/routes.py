@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Cookie, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -22,7 +23,16 @@ from app.schemas.dto import (
     WebsiteUpdate,
 )
 from app.services.ai import AIService
-from app.services.auth import login_with_google
+from app.services.auth import (
+    OAUTH_STATE_COOKIE,
+    SESSION_COOKIE,
+    build_google_authorization_url,
+    create_session_token,
+    get_session_user,
+    login_with_google,
+    login_with_google_code,
+    new_oauth_state,
+)
 from app.services.crawler import CompanyCrawler
 from app.services.search import semantic_search
 from app.services.settings_store import SECRET_KEYS, provider_status, set_setting
@@ -58,6 +68,62 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)) -> 
         return login_with_google(db, payload.credential)
     except Exception as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.get("/auth/google/start")
+def google_redirect_start() -> RedirectResponse:
+    settings = get_settings()
+    if not settings.google_client_id or not settings.google_client_secret:
+        raise HTTPException(status_code=400, detail="Google OAuth Client ID and Client Secret are required")
+    state = new_oauth_state()
+    response = RedirectResponse(build_google_authorization_url(state))
+    response.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=settings.app_url.startswith("https://"), samesite="lax", max_age=600)
+    return response
+
+
+@router.get("/auth/google/callback")
+async def google_redirect_callback(
+    code: str | None = None,
+    state: str | None = None,
+    oauth_state: str | None = Cookie(default=None, alias=OAUTH_STATE_COOKIE),
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    settings = get_settings()
+    if not code or not state or state != oauth_state:
+        return RedirectResponse(f"{settings.app_url.rstrip('/')}/?auth_error=oauth_state")
+    try:
+        user = await login_with_google_code(db, code)
+    except Exception:
+        return RedirectResponse(f"{settings.app_url.rstrip('/')}/?auth_error=oauth_callback")
+    response = RedirectResponse(settings.app_url)
+    response.set_cookie(
+        SESSION_COOKIE,
+        create_session_token(user),
+        httponly=True,
+        secure=settings.app_url.startswith("https://"),
+        samesite="lax",
+        max_age=60 * 60 * 24 * 14,
+    )
+    response.delete_cookie(OAUTH_STATE_COOKIE)
+    return response
+
+
+@router.get("/auth/session", response_model=UserRead)
+def current_session(
+    session_token: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: Session = Depends(get_db),
+) -> User:
+    user = get_session_user(db, session_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+@router.post("/auth/logout")
+def logout() -> RedirectResponse:
+    response = RedirectResponse("/")
+    response.delete_cookie(SESSION_COOKIE)
+    return response
 
 
 @router.get("/users", response_model=list[UserRead])

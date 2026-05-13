@@ -19,6 +19,13 @@ def _origin_from_url(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+def _domain_from_origin(origin: str) -> str:
+    parsed = urlparse(origin)
+    host = parsed.hostname or ""
+    parts = host.split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
 def get_setting(db: Session | None, key: str, default: str = "") -> str:
     if key in ENV_MANAGED_KEYS:
         settings = get_settings()
@@ -77,7 +84,10 @@ def provider_status(db: Session) -> dict:
         warnings.append("Geen OpenAI API key ingesteld. OpenAI embeddings en OpenAI modelcatalogus zijn niet live beschikbaar.")
     if not google_client_id:
         warnings.append("Google login is niet geconfigureerd. Development login gebruikt tijdelijk een e-mailadres.")
+    elif not google_client_secret:
+        warnings.append("Google Client Secret ontbreekt. De server-side Google redirect login kan dan geen token ophalen.")
     app_url_origin = _origin_from_url(settings.app_url)
+    google_redirect_uri = f"{settings.app_url.rstrip('/')}/api/auth/google/callback" if app_url_origin else ""
     return {
         "openai_configured": bool(openai_key),
         "openrouter_configured": bool(openrouter_key),
@@ -86,7 +96,8 @@ def provider_status(db: Session) -> dict:
         "google_client_id": google_client_id,
         "app_url": settings.app_url,
         "app_url_origin": app_url_origin,
-        "google_required_origins": [origin for origin in [app_url_origin] if origin],
+        "google_redirect_uri": google_redirect_uri,
+        "google_authorized_domains": [domain for domain in [_domain_from_origin(app_url_origin)] if domain],
         "default_summary_provider": summary_provider,
         "default_summary_model": summary_model,
         "default_embedding_provider": embedding_provider,

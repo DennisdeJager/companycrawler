@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_url: str = "http://localhost:8080"
     api_url: str = "http://localhost:8000"
+    app_secret_key: str = "development-only-change-me"
     database_url: str = "postgresql+psycopg://companycrawler:companycrawler@db:5432/companycrawler"
     google_client_id: str = ""
     google_client_secret: str = ""

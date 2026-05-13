@@ -60,7 +60,8 @@ export type ProviderSettings = {
   google_client_id: string
   app_url: string
   app_url_origin: string
-  google_required_origins: string[]
+  google_redirect_uri: string
+  google_authorized_domains: string[]
   default_summary_provider: string
   default_summary_model: string
   default_embedding_provider: string
@@ -79,6 +80,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string }>('/api/health'),
+  session: () => request<User>('/api/auth/session'),
   login: (credential: string) => request<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
   websites: () => request<Website[]>('/api/websites'),
   createWebsite: (url: string, company_name: string) => request<Website>('/api/websites', { method: 'POST', body: JSON.stringify({ url, company_name }) }),

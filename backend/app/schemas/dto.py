@@ -113,7 +113,8 @@ class ProviderSettingsRead(BaseModel):
     google_client_id: str
     app_url: str
     app_url_origin: str
-    google_required_origins: list[str]
+    google_redirect_uri: str
+    google_authorized_domains: list[str]
     default_summary_provider: str
     default_summary_model: str
     default_embedding_provider: str

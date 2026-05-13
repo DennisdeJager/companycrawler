@@ -46,15 +46,16 @@ Wanneer API en frontend op hetzelfde domein draaien, proxyt nginx `/api` en `/mc
 
 ## Google OAuth
 
-De webconsole gebruikt Google Identity Services met een ID-token callback. Hiervoor is een OAuth Client ID van het type `Web application` nodig.
+De webconsole gebruikt een server-side Google OAuth redirect-flow. Hiervoor is een OAuth Client ID van het type `Web application` nodig.
 
 Voor dev/public login:
 
-- Authorized JavaScript origins: `https://companycrawler.smawa.nl`
+- Authorized redirect URIs: `https://companycrawler.smawa.nl/api/auth/google/callback`
 - Authorized domains: `smawa.nl`
-- Authorized redirect URIs: niet nodig voor deze callback-flow
+- Authorized JavaScript origins: niet nodig
+- `.env`: `GOOGLE_CLIENT_ID` en `GOOGLE_CLIENT_SECRET` moeten ingevuld zijn
 
-De Settings pagina toont de actieve browser-origin en de `APP_URL` origin uit `.env`, zodat zichtbaar is welke origin in Google Cloud geregistreerd moet zijn.
+De Settings pagina toont de actieve browser-origin, `APP_URL` origin en redirect URI uit `.env`, zodat zichtbaar is welke redirect URI in Google Cloud geregistreerd moet zijn.
 
 ## GitHub
 
