@@ -19,7 +19,12 @@ def cosine(a: list[float], b: list[float]) -> float:
 async def semantic_search(db: Session, query: str, website_id: int | None, limit: int) -> list[dict]:
     ai = AIService(db)
     query_embedding = await ai.embed(query)
-    chunk_query = db.query(ContentChunk, Document, Website).join(Document).join(Website)
+    chunk_query = (
+        db.query(ContentChunk, Document, Website)
+        .select_from(ContentChunk)
+        .join(Document, ContentChunk.document_id == Document.id)
+        .join(Website, Document.website_id == Website.id)
+    )
     if website_id:
         chunk_query = chunk_query.filter(Document.website_id == website_id)
     scored = []
