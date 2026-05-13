@@ -12,7 +12,7 @@ docker compose up --build -d
   "targets": {
     "dev": {
       "host": "192.168.10.12",
-      "user": "capps",
+      "user": "root",
       "remotePath": "/opt/capps/apps/companycrawler",
       "composeFile": "docker-compose.yml",
       "services": ["db", "api", "worker", "frontend"],
