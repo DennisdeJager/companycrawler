@@ -14,6 +14,9 @@ button, input, select { font: inherit; }
   display: grid;
   grid-template-columns: 248px 1fr;
   min-height: 100vh;
+  background:
+    radial-gradient(circle at 85% 8%, rgba(15, 139, 141, 0.09), transparent 28%),
+    #f5f7f9;
 }
 
 .sidebar {
@@ -25,15 +28,16 @@ button, input, select { font: inherit; }
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   font-weight: 800;
-  font-size: 18px;
+  font-size: 19px;
   margin-bottom: 28px;
 }
 .brand img {
-  width: 30px;
-  height: 30px;
+  width: 48px;
+  height: 48px;
   object-fit: contain;
+  border-radius: 8px;
 }
 
 nav { display: grid; gap: 5px; }
@@ -55,7 +59,22 @@ nav button.active, nav button:hover {
   color: #0f6f71;
 }
 
-.workspace { padding: 24px; overflow: hidden; }
+.workspace {
+  padding: 24px;
+  overflow: hidden;
+  position: relative;
+}
+.workspace::before {
+  content: "";
+  position: fixed;
+  right: 24px;
+  bottom: 18px;
+  width: min(34vw, 420px);
+  aspect-ratio: 1;
+  background: url("../assets/smawa-logo-symbol.png") center / contain no-repeat;
+  opacity: 0.035;
+  pointer-events: none;
+}
 .topbar {
   display: flex;
   align-items: center;
@@ -197,6 +216,16 @@ button.danger { background: #fff2f2; color: #b83232; border-color: #f3c9c9; padd
   font-weight: 850;
   font-size: 24px;
   margin: 6px auto 12px;
+  position: relative;
+}
+.progress-panel.scanning .progress-ring {
+  animation: scanPulse 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(15, 139, 141, 0.22);
+}
+.progress-panel.scanning .meter span {
+  background: linear-gradient(90deg, #f4a340, #0f8b8d, #f4a340);
+  background-size: 220% 100%;
+  animation: scanSweep 1.4s linear infinite;
 }
 .status-line { text-align: center; color: #43505b; font-size: 13px; }
 .scan-error {
@@ -282,6 +311,12 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 
 .inspector-panel h2 { font-size: 20px; margin: 0 0 8px; }
 .inspector-panel p { color: #43505b; line-height: 1.55; }
+.knowledge-layout > .inspector-panel {
+  position: sticky;
+  top: 18px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
 .full-text-block {
   border-top: 1px solid #eef2f5;
   margin-top: 14px;
@@ -360,6 +395,9 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 .mind-node-group {
   background: #fff8ea;
   border-color: #f3d7a1;
+}
+.mind-node-group:nth-of-type(3n) {
+  background: #eef4f7;
 }
 .mind-node-document:hover,
 .mind-node-document.selected {
@@ -531,7 +569,16 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 
 .theme-dark {
   color: #e8eef2;
-  background: #111820;
+  background:
+    radial-gradient(circle at 85% 8%, rgba(88, 195, 196, 0.12), transparent 28%),
+    #111820;
+}
+.theme-dark .workspace::before {
+  filter: saturate(1.2) brightness(1.25);
+  opacity: 0.055;
+}
+.theme-dark .brand img {
+  filter: drop-shadow(0 0 14px rgba(88, 195, 196, 0.26));
 }
 .theme-dark .sidebar,
 .theme-dark .panel,
@@ -630,7 +677,18 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
   .sidebar { position: static; }
   nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard-layout, .split-layout, .knowledge-layout { grid-template-columns: 1fr; }
+  .knowledge-layout > .inspector-panel { position: static; max-height: none; }
   .table-row, .user-management-row { grid-template-columns: 1fr; }
+}
+
+@keyframes scanPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(15, 139, 141, 0.22); }
+  50% { transform: scale(1.035); box-shadow: 0 0 0 10px rgba(15, 139, 141, 0); }
+}
+
+@keyframes scanSweep {
+  from { background-position: 0% 50%; }
+  to { background-position: 220% 50%; }
 }
 
 @media (max-width: 720px) {

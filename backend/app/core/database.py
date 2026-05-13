@@ -1,4 +1,6 @@
 from collections.abc import Generator
+import hashlib
+import re
 
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -31,17 +33,56 @@ def init_db() -> None:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(bind=engine)
     _upgrade_schema()
+    _deduplicate_existing_vectors()
 
 
 def _upgrade_schema() -> None:
     if engine.dialect.name == "postgresql":
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE websites ADD COLUMN IF NOT EXISTS logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
+            connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_hash VARCHAR(64) NOT NULL DEFAULT ''"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_documents_text_hash ON documents (text_hash)"))
     elif engine.dialect.name == "sqlite":
         with engine.begin() as connection:
-            columns = [row[1] for row in connection.execute(text("PRAGMA table_info(websites)"))]
-            if "logo_url" not in columns:
+            website_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(websites)"))]
+            if "logo_url" not in website_columns:
                 connection.execute(text("ALTER TABLE websites ADD COLUMN logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
+            document_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(documents)"))]
+            if "text_hash" not in document_columns:
+                connection.execute(text("ALTER TABLE documents ADD COLUMN text_hash VARCHAR(64) NOT NULL DEFAULT ''"))
+
+
+def _content_hash(text_value: str) -> str:
+    clean = re.sub(r"\s+", " ", text_value or "").strip().lower()
+    return hashlib.sha256(clean.encode("utf-8")).hexdigest() if clean else ""
+
+
+def _deduplicate_existing_vectors() -> None:
+    from app.models import ContentChunk, Document
+
+    db = SessionLocal()
+    try:
+        documents = db.query(Document).order_by(Document.website_id, Document.created_at.asc()).all()
+        kept_by_site_hash: dict[tuple[int, str], int] = {}
+        changed = False
+        for document in documents:
+            if not document.text_hash:
+                document.text_hash = _content_hash(document.text_content)
+                changed = True
+            key = (document.website_id, document.text_hash)
+            if not document.text_hash:
+                continue
+            if key not in kept_by_site_hash:
+                kept_by_site_hash[key] = document.id
+                continue
+            db.query(ContentChunk).filter(ContentChunk.document_id == document.id).delete()
+            if document.vector_status != "duplicate":
+                document.vector_status = "duplicate"
+                changed = True
+        if changed:
+            db.commit()
+    finally:
+        db.close()
 
 
 def get_db() -> Generator[Session, None, None]:

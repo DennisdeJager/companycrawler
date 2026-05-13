@@ -207,7 +207,13 @@ class CompanyCrawler:
 
     async def _store_document(self, db: Session, website_id: int, scan_id: int, fetched: FetchedContent) -> None:
         ai = AIService(db)
-        summary, display_summary = await ai.summarize(fetched.title, fetched.text)
+        text_hash = self._content_hash(fetched.text)
+        duplicate = self._find_duplicate_document(db, website_id, text_hash)
+        if duplicate:
+            summary = duplicate.summary
+            display_summary = duplicate.display_summary
+        else:
+            summary, display_summary = await ai.summarize(fetched.title, fetched.text)
         document = (
             db.query(Document)
             .filter(Document.website_id == website_id, Document.source_url == fetched.url)
@@ -222,6 +228,7 @@ class CompanyCrawler:
         document.file_name = fetched.file_name[:255]
         document.storage_path = self._store_file_bytes(website_id, fetched) if fetched.file_name else ""
         document.text_content = fetched.text
+        document.text_hash = text_hash
         document.summary = summary
         document.display_summary = display_summary[:280]
         document.vector_status = "processing"
@@ -240,13 +247,24 @@ class CompanyCrawler:
             document.file_name = fetched.file_name[:255]
             document.storage_path = self._store_file_bytes(website_id, fetched) if fetched.file_name else ""
             document.text_content = fetched.text
+            document.text_hash = text_hash
             document.summary = summary
             document.display_summary = display_summary[:280]
             document.vector_status = "processing"
             db.commit()
         db.refresh(document)
 
+        duplicate = self._find_duplicate_document(db, website_id, text_hash, document.id)
         db.query(ContentChunk).filter(ContentChunk.document_id == document.id).delete()
+        if duplicate:
+            document.vector_status = "duplicate"
+            scan = db.get(ScanJob, scan_id)
+            if scan:
+                scan.items_processed += 1
+            db.commit()
+            await asyncio.sleep(0)
+            return
+
         for index, chunk_text in enumerate(self._chunk_text(fetched.text)):
             embedding = await ai.embed(chunk_text)
             db.add(
@@ -277,6 +295,19 @@ class CompanyCrawler:
             chunks.append(clean[start : start + size])
             start += size - overlap
         return chunks[:40]
+
+    def _content_hash(self, text: str) -> str:
+        clean = re.sub(r"\s+", " ", text).strip().lower()
+        return hashlib.sha256(clean.encode("utf-8")).hexdigest()
+
+    def _find_duplicate_document(self, db: Session, website_id: int, text_hash: str, exclude_document_id: int | None = None) -> Document | None:
+        if not text_hash:
+            return None
+        query = db.query(Document).filter(Document.website_id == website_id, Document.text_hash == text_hash)
+        if exclude_document_id is not None:
+            query = query.filter(Document.id != exclude_document_id)
+        documents = query.order_by(Document.created_at.asc()).all()
+        return next((document for document in documents if document.vector_status != "duplicate"), documents[0] if documents else None)
 
     def _normalize_url(self, url: str) -> str:
         clean, _fragment = urldefrag(str(url))

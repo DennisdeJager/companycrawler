@@ -386,7 +386,7 @@ function ProgressPanel({ scan, documents, message }: { scan: Scan | null; docume
   const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
   const elapsedSeconds = scan ? scan.duration_seconds || secondsBetween(scan.started_at ?? scan.created_at, scan.completed_at) : 0
   return (
-    <div className="panel progress-panel">
+    <div className={scan?.status === 'running' ? 'panel progress-panel scanning' : 'panel progress-panel'}>
       <div className="panel-title"><Activity size={18} /> Realtime scan voortgang</div>
       <div className="progress-ring">{scan?.progress ?? 0}%</div>
       <div className="status-line">{scan?.status ?? 'idle'} · {statusText}</div>
@@ -627,6 +627,7 @@ type MindNode = {
   height: number
   document?: DocumentItem
   kind: 'root' | 'group' | 'document'
+  depth: number
 }
 
 type MindEdge = {
@@ -692,78 +693,60 @@ function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: Doc
 }
 
 function buildMindmap(documents: DocumentItem[], website: Website | null) {
-  const uniqueDocs = uniqueDocuments(documents)
-  const grouped = new Map<string, DocumentItem[]>()
-  for (const document of uniqueDocs) {
-    const segment = firstPathSegment(document.source_url)
-    grouped.set(segment, [...(grouped.get(segment) ?? []), document])
-  }
-
-  const groupEntries = Array.from(grouped.entries()).sort(([left], [right]) => left.localeCompare(right))
   const nodeWidth = 230
   const nodeHeight = 70
-  const groupWidth = 210
-  const gap = 16
-  const groupGap = 34
-  const left = 24
-  const groupX = 300
-  const documentX = 560
+  const columnGap = 72
+  const rowGap = 16
   let cursorY = 22
   const nodes: MindNode[] = []
   const edges: MindEdge[] = []
-  const groupNodes: MindNode[] = []
-  const docNodes: MindNode[] = []
+  const treeRoot = buildDocumentTree(uniqueDocuments(documents))
+  let maxDepth = 0
 
-  for (const [groupName, docs] of groupEntries) {
-    const sortedDocs = docs.sort((leftDoc, rightDoc) => leftDoc.source_url.localeCompare(rightDoc.source_url))
-    const groupStart = cursorY
-    for (const document of sortedDocs) {
-      const node: MindNode = {
-        id: `doc-${document.id}`,
-        title: compactTitle(document.title || lastPathSegment(document.source_url)),
-        subtitle: compactTitle(document.display_summary || document.summary || document.source_url, 74),
-        x: documentX,
-        y: cursorY,
-        width: nodeWidth,
-        height: nodeHeight,
-        document,
-        kind: 'document'
-      }
-      docNodes.push(node)
-      cursorY += nodeHeight + gap
-    }
-    const groupHeight = Math.max(nodeHeight, sortedDocs.length * (nodeHeight + gap) - gap)
-    const groupNode: MindNode = {
-      id: `group-${groupName}`,
-      title: groupName,
-      subtitle: `${sortedDocs.length} item${sortedDocs.length === 1 ? '' : 's'}`,
-      x: groupX,
-      y: groupStart + (groupHeight - nodeHeight) / 2,
-      width: groupWidth,
-      height: nodeHeight,
-      kind: 'group'
-    }
-    groupNodes.push(groupNode)
-    for (const documentNode of docNodes.slice(-sortedDocs.length)) {
-      edges.push({ from: groupNode, to: documentNode })
-    }
-    cursorY += groupGap
-  }
-
-  const height = Math.max(360, cursorY + 20)
   const rootNode: MindNode = {
     id: 'root',
     title: compactTitle(website?.company_name || 'Website'),
-    subtitle: uniqueDocs.length ? `${uniqueDocs.length} unieke items` : 'Geen crawl-data',
-    x: left,
-    y: Math.max(22, height / 2 - nodeHeight / 2),
+    subtitle: documents.length ? `${uniqueDocuments(documents).length} unieke items` : 'Geen crawl-data',
+    x: 24,
+    y: 22,
     width: 220,
     height: nodeHeight,
-    kind: 'root'
+    kind: 'root',
+    depth: 0
   }
-  nodes.push(rootNode, ...groupNodes, ...docNodes)
-  for (const groupNode of groupNodes) edges.push({ from: rootNode, to: groupNode })
-  return { nodes, edges, width: 840, height }
+  nodes.push(rootNode)
+
+  function placeTreeNode(treeNode: DocumentTreeNode, parent: MindNode, depth: number): MindNode {
+    maxDepth = Math.max(maxDepth, depth)
+    const document = treeNode.document
+    const mindNode: MindNode = {
+      id: document ? `doc-${document.id}` : `group-${treeNode.id}`,
+      title: compactTitle(document ? (document.title || treeNode.label) : treeNode.label, 54),
+      subtitle: document ? compactTitle(document.display_summary || document.summary || document.source_url, 72) : `${countTreeDocuments(treeNode)} item${countTreeDocuments(treeNode) === 1 ? '' : 's'}`,
+      x: 24 + depth * (nodeWidth + columnGap),
+      y: cursorY,
+      width: nodeWidth,
+      height: nodeHeight,
+      document,
+      kind: document ? 'document' : 'group',
+      depth
+    }
+    cursorY += nodeHeight + rowGap
+    nodes.push(mindNode)
+    edges.push({ from: parent, to: mindNode })
+    for (const child of treeNode.children) {
+      placeTreeNode(child, mindNode, depth + 1)
+    }
+    return mindNode
+  }
+
+  for (const child of treeRoot) {
+    placeTreeNode(child, rootNode, 1)
+  }
+
+  const height = Math.max(360, cursorY + 20)
+  rootNode.y = Math.max(22, height / 2 - nodeHeight / 2)
+  return { nodes, edges, width: Math.max(840, 48 + (maxDepth + 1) * nodeWidth + maxDepth * columnGap), height }
 }
 
 function uniqueDocuments(documents: DocumentItem[]) {
@@ -782,26 +765,6 @@ function canonicalFrontendUrl(value: string) {
     parsed.hostname = parsed.hostname.replace(/^www\./, '').toLowerCase()
     if (parsed.pathname === '/') parsed.pathname = ''
     return parsed.toString()
-  } catch {
-    return value
-  }
-}
-
-function firstPathSegment(value: string) {
-  try {
-    const parsed = new URL(value)
-    const segment = parsed.pathname.split('/').filter(Boolean)[0]
-    return segment ? segment.replace(/[-_]+/g, ' ') : 'Home'
-  } catch {
-    return 'Overig'
-  }
-}
-
-function lastPathSegment(value: string) {
-  try {
-    const parsed = new URL(value)
-    const segments = parsed.pathname.split('/').filter(Boolean)
-    return segments[segments.length - 1]?.replace(/[-_]+/g, ' ') || parsed.hostname
   } catch {
     return value
   }
@@ -1030,6 +993,7 @@ const seedDocuments: DocumentItem[] = [
     content_type: 'text/html',
     file_name: '',
     storage_path: '',
+    text_hash: '',
     summary: 'Start een scan om pagina’s, bestanden, samenvattingen en embeddings te verzamelen.',
     display_summary: 'Nog geen website tree beschikbaar.',
     vector_status: 'pending',

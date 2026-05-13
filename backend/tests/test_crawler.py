@@ -51,6 +51,12 @@ def test_detect_logo_url_falls_back_to_logo_image() -> None:
     assert crawler._detect_logo_url("https://example.com", html) == "https://example.com/assets/company-logo.svg"
 
 
+def test_content_hash_normalizes_whitespace_and_case() -> None:
+    crawler = object.__new__(CompanyCrawler)
+
+    assert crawler._content_hash("Contact  test@example.com") == crawler._content_hash(" contact\nTEST@example.com ")
+
+
 def make_scan_session() -> tuple[Session, Website, ScanJob]:
     engine = create_engine("sqlite:///:memory:")
     Website.__table__.create(bind=engine)

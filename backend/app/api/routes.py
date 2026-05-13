@@ -66,6 +66,7 @@ def _website_storage_sizes(db: Session, website_id: int) -> tuple[float, float]:
                     + COALESCE(pg_column_size(file_name), 0)
                     + COALESCE(pg_column_size(storage_path), 0)
                     + COALESCE(pg_column_size(text_content), 0)
+                    + COALESCE(pg_column_size(text_hash), 0)
                     + COALESCE(pg_column_size(summary), 0)
                     + COALESCE(pg_column_size(display_summary), 0)
                     + COALESCE(pg_column_size(vector_status), 0)
@@ -105,6 +106,7 @@ def _website_storage_sizes(db: Session, website_id: int) -> tuple[float, float]:
                     doc.file_name,
                     doc.storage_path,
                     doc.text_content,
+                    doc.text_hash,
                     doc.summary,
                     doc.display_summary,
                     doc.vector_status,

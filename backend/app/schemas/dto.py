@@ -60,6 +60,7 @@ class DocumentRead(BaseModel):
     content_type: str
     file_name: str
     storage_path: str
+    text_hash: str
     summary: str
     display_summary: str
     vector_status: str

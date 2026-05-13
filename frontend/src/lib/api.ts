@@ -33,6 +33,7 @@ export type DocumentItem = {
   content_type: string
   file_name: string
   storage_path: string
+  text_hash: string
   summary: string
   display_summary: string
   vector_status: string

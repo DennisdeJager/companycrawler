@@ -79,6 +79,7 @@ class Document(Base):
     file_name: Mapped[str] = mapped_column(String(255), default="")
     storage_path: Mapped[str] = mapped_column(String(512), default="")
     text_content: Mapped[str] = mapped_column(Text, default="")
+    text_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
     summary: Mapped[str] = mapped_column(Text, default="")
     display_summary: Mapped[str] = mapped_column(String(280), default="")
     vector_status: Mapped[str] = mapped_column(String(64), default="pending")
