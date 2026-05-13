@@ -1,20 +1,26 @@
 /* eslint-disable react-hooks/exhaustive-deps, react-refresh/only-export-components */
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
   Activity,
   AlertTriangle,
   BookOpen,
   Cable,
+  ChevronDown,
+  ChevronRight,
   CheckCircle2,
   FileText,
   Globe2,
   KeyRound,
+  Maximize2,
+  Minus,
   Moon,
+  Move,
   Network,
   Pause,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   Save,
   Search,
@@ -741,6 +747,9 @@ type MindNode = {
   document?: DocumentItem
   kind: 'root' | 'group' | 'document'
   depth: number
+  canCollapse: boolean
+  collapsed: boolean
+  childCount: number
 }
 
 type MindEdge = {
@@ -750,7 +759,70 @@ type MindEdge = {
 
 function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: DocumentItem | null; selectedWebsite: Website | null; setSelectedDocument: (doc: DocumentItem) => void }) {
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
-  const graph = useMemo(() => buildMindmap(props.documents, props.selectedWebsite), [props.documents, props.selectedWebsite])
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set())
+  const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 0.88 })
+  const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
+  const graph = useMemo(() => buildMindmap(props.documents, props.selectedWebsite, collapsedNodeIds), [props.documents, props.selectedWebsite, collapsedNodeIds])
+
+  const toggleNode = (node: MindNode) => {
+    if (node.document) {
+      props.setSelectedDocument(node.document)
+      return
+    }
+    if (!node.canCollapse) return
+    setCollapsedNodeIds((current) => {
+      const next = new Set(current)
+      if (next.has(node.id)) next.delete(node.id)
+      else next.add(node.id)
+      return next
+    })
+  }
+
+  const setScale = (nextScale: number) => {
+    setViewport((current) => ({ ...current, scale: Math.min(1.35, Math.max(0.45, nextScale)) }))
+  }
+
+  const resetExplorerView = () => {
+    setViewport({ x: 0, y: 0, scale: 0.88 })
+  }
+
+  const collapseAll = () => {
+    setCollapsedNodeIds(new Set(graph.collapsibleIds))
+    resetExplorerView()
+  }
+
+  const expandAll = () => {
+    setCollapsedNodeIds(new Set())
+    resetExplorerView()
+  }
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest('button')) return
+    dragRef.current = { startX: event.clientX, startY: event.clientY, baseX: viewport.x, baseY: viewport.y }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return
+    const drag = dragRef.current
+    setViewport((current) => ({
+      ...current,
+      x: drag.baseX + event.clientX - drag.startX,
+      y: drag.baseY + event.clientY - drag.startY
+    }))
+  }
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setScale(viewport.scale + (event.deltaY > 0 ? -0.06 : 0.06))
+  }
 
   useEffect(() => {
     if (!props.selectedDocument?.id) return
@@ -770,34 +842,66 @@ function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: Doc
   return (
     <section className="knowledge-layout">
       <div className="panel mindmap-panel">
-        <div className="panel-title"><Network size={18} /> Website mindmap</div>
-        <div className="mindmap-canvas" style={{ width: graph.width, height: graph.height }}>
-          <svg className="mindmap-lines" width={graph.width} height={graph.height} aria-hidden="true">
-            {graph.edges.map((edge) => (
-              <path
-                key={`${edge.from.id}-${edge.to.id}`}
-                d={connectorPath(edge.from, edge.to)}
-                fill="none"
-              />
+        <div className="mindmap-header">
+          <div className="panel-title"><Network size={18} /> Website explorer</div>
+          <div className="mindmap-toolbar" aria-label="Explorer controls">
+            <button className="icon-button" onClick={() => setScale(viewport.scale + 0.1)} title="Inzoomen" aria-label="Inzoomen"><Plus size={16} /></button>
+            <button className="icon-button" onClick={() => setScale(viewport.scale - 0.1)} title="Uitzoomen" aria-label="Uitzoomen"><Minus size={16} /></button>
+            <button className="icon-button" onClick={resetExplorerView} title="Weergave resetten" aria-label="Weergave resetten"><Maximize2 size={16} /></button>
+            <button className="secondary compact" onClick={expandAll}>Alles open</button>
+            <button className="secondary compact" onClick={collapseAll}>Alles dicht</button>
+          </div>
+        </div>
+        <div
+          className="mindmap-viewport"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onWheel={handleWheel}
+        >
+          <div
+            className="mindmap-canvas"
+            style={{
+              width: graph.width,
+              height: graph.height,
+              transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`
+            }}
+          >
+            <svg className="mindmap-lines" width={graph.width} height={graph.height} aria-hidden="true">
+              {graph.edges.map((edge) => (
+                <path
+                  key={`${edge.from.id}-${edge.to.id}`}
+                  d={connectorPath(edge.from, edge.to)}
+                  fill="none"
+                />
+              ))}
+            </svg>
+            {graph.nodes.map((node) => (
+              <button
+                className={[
+                  'mind-node',
+                  `mind-node-${node.kind}`,
+                  node.collapsed ? 'collapsed' : '',
+                  node.document && props.selectedDocument?.id === node.document.id ? 'selected' : ''
+                ].filter(Boolean).join(' ')}
+                key={node.id}
+                style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
+                onClick={() => toggleNode(node)}
+                disabled={!node.document && !node.canCollapse}
+                title={node.document?.source_url || node.title}
+              >
+                <span className="mind-node-icon">
+                  {node.canCollapse ? (node.collapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />) : <FileText size={15} />}
+                </span>
+                <span className="mind-node-copy">
+                  <strong>{node.title}</strong>
+                  <small>{node.subtitle}</small>
+                </span>
+              </button>
             ))}
-          </svg>
-          {graph.nodes.map((node) => (
-            <button
-              className={[
-                'mind-node',
-                `mind-node-${node.kind}`,
-                node.document && props.selectedDocument?.id === node.document.id ? 'selected' : ''
-              ].filter(Boolean).join(' ')}
-              key={node.id}
-              style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
-              onClick={() => node.document && props.setSelectedDocument(node.document)}
-              disabled={!node.document}
-              title={node.document?.source_url || node.title}
-            >
-              <strong>{node.title}</strong>
-              <small>{node.subtitle}</small>
-            </button>
-          ))}
+          </div>
+          <div className="mindmap-hint"><Move size={14} /> Slepen om te bewegen, scrollen om te zoomen</div>
         </div>
       </div>
       <Inspector document={detail?.id === props.selectedDocument?.id ? detail : props.selectedDocument} website={props.selectedWebsite} />
@@ -805,7 +909,7 @@ function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: Doc
   )
 }
 
-function buildMindmap(documents: DocumentItem[], website: Website | null) {
+function buildMindmap(documents: DocumentItem[], website: Website | null, collapsedNodeIds: Set<string>) {
   const nodeWidth = 230
   const nodeHeight = 70
   const columnGap = 72
@@ -814,6 +918,7 @@ function buildMindmap(documents: DocumentItem[], website: Website | null) {
   const nodes: MindNode[] = []
   const edges: MindEdge[] = []
   const treeRoot = buildDocumentTree(uniqueDocuments(documents))
+  const collapsibleIds = ['root', ...collectCollapsibleTreeIds(treeRoot)]
   let maxDepth = 0
 
   const rootNode: MindNode = {
@@ -825,41 +930,65 @@ function buildMindmap(documents: DocumentItem[], website: Website | null) {
     width: 220,
     height: nodeHeight,
     kind: 'root',
-    depth: 0
+    depth: 0,
+    canCollapse: treeRoot.length > 0,
+    collapsed: collapsedNodeIds.has('root'),
+    childCount: treeRoot.reduce((total, child) => total + countTreeDocuments(child), 0)
   }
   nodes.push(rootNode)
 
   function placeTreeNode(treeNode: DocumentTreeNode, parent: MindNode, depth: number): MindNode {
     maxDepth = Math.max(maxDepth, depth)
     const document = treeNode.document
+    const id = document ? `doc-${document.id}` : `group-${treeNode.id}`
+    const childCount = countTreeDocuments(treeNode)
+    const canCollapse = !document && treeNode.children.length > 0
+    const collapsed = canCollapse && collapsedNodeIds.has(id)
     const mindNode: MindNode = {
-      id: document ? `doc-${document.id}` : `group-${treeNode.id}`,
+      id,
       title: compactTitle(document ? (document.title || treeNode.label) : treeNode.label, 54),
-      subtitle: document ? compactTitle(document.display_summary || document.summary || document.source_url, 72) : `${countTreeDocuments(treeNode)} item${countTreeDocuments(treeNode) === 1 ? '' : 's'}`,
+      subtitle: document ? compactTitle(document.display_summary || document.summary || document.source_url, 72) : `${childCount} item${childCount === 1 ? '' : 's'}${collapsed ? ' verborgen' : ''}`,
       x: 24 + depth * (nodeWidth + columnGap),
       y: cursorY,
       width: nodeWidth,
       height: nodeHeight,
       document,
       kind: document ? 'document' : 'group',
-      depth
+      depth,
+      canCollapse,
+      collapsed,
+      childCount
     }
     cursorY += nodeHeight + rowGap
     nodes.push(mindNode)
     edges.push({ from: parent, to: mindNode })
-    for (const child of treeNode.children) {
-      placeTreeNode(child, mindNode, depth + 1)
+    if (!collapsed) {
+      for (const child of treeNode.children) {
+        placeTreeNode(child, mindNode, depth + 1)
+      }
     }
     return mindNode
   }
 
-  for (const child of treeRoot) {
-    placeTreeNode(child, rootNode, 1)
+  if (!rootNode.collapsed) {
+    for (const child of treeRoot) {
+      placeTreeNode(child, rootNode, 1)
+    }
   }
 
   const height = Math.max(360, cursorY + 20)
   rootNode.y = Math.max(22, height / 2 - nodeHeight / 2)
-  return { nodes, edges, width: Math.max(840, 48 + (maxDepth + 1) * nodeWidth + maxDepth * columnGap), height }
+  return { nodes, edges, width: Math.max(840, 48 + (maxDepth + 1) * nodeWidth + maxDepth * columnGap), height, collapsibleIds }
+}
+
+function collectCollapsibleTreeIds(nodes: DocumentTreeNode[]) {
+  const ids: string[] = []
+  function walk(node: DocumentTreeNode) {
+    if (!node.document && node.children.length > 0) ids.push(`group-${node.id}`)
+    node.children.forEach(walk)
+  }
+  nodes.forEach(walk)
+  return ids
 }
 
 function uniqueDocuments(documents: DocumentItem[]) {

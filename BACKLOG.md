@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Knowledge Graph mindmap vervangen door inklapbare, sleepbare en zoombare website explorer.
 - [x] Mailto-links uit crawls geweerd, duplicate graph nodes op content-hash samengevoegd en content inspector scrollbaar gemaakt.
 - [x] Dashboard scanbediening voor starten, pauzeren en stoppen toegevoegd; reset verwijdert website crawl-data inclusief graph chunks.
 
