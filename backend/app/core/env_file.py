@@ -10,6 +10,8 @@ ENV_KEY_BY_SETTING = {
     "default_summary_model": "DEFAULT_SUMMARY_MODEL",
     "default_embedding_provider": "DEFAULT_EMBEDDING_PROVIDER",
     "default_embedding_model": "DEFAULT_EMBEDDING_MODEL",
+    "default_agent_provider": "DEFAULT_AGENT_PROVIDER",
+    "default_agent_model": "DEFAULT_AGENT_MODEL",
     "scan_max_items": "SCAN_MAX_ITEMS",
     "scan_max_file_mb": "SCAN_MAX_FILE_MB",
     "scan_max_depth": "SCAN_MAX_DEPTH",

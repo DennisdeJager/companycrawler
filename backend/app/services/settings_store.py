@@ -80,6 +80,8 @@ def provider_status(db: Session) -> dict:
     summary_model = get_setting(db, "default_summary_model", settings.default_summary_model)
     embedding_provider = get_setting(db, "default_embedding_provider", settings.default_embedding_provider)
     embedding_model = get_setting(db, "default_embedding_model", settings.default_embedding_model)
+    agent_provider = get_setting(db, "default_agent_provider", settings.default_agent_provider)
+    agent_model = get_setting(db, "default_agent_model", settings.default_agent_model)
     scan_max_items = int(get_setting(db, "scan_max_items", str(settings.scan_max_items)))
     scan_max_file_mb = int(get_setting(db, "scan_max_file_mb", str(settings.scan_max_file_mb)))
     scan_max_depth = int(get_setting(db, "scan_max_depth", str(settings.scan_max_depth)))
@@ -109,6 +111,8 @@ def provider_status(db: Session) -> dict:
         "default_summary_model": summary_model,
         "default_embedding_provider": embedding_provider,
         "default_embedding_model": embedding_model,
+        "default_agent_provider": agent_provider,
+        "default_agent_model": agent_model,
         "scan_max_items": scan_max_items,
         "scan_max_file_mb": scan_max_file_mb,
         "scan_max_depth": scan_max_depth,

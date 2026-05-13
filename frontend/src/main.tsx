@@ -71,6 +71,8 @@ const emptySettings: ProviderSettings = {
   default_summary_model: 'gpt-5.4-mini',
   default_embedding_provider: 'openai',
   default_embedding_model: 'text-embedding-3-small',
+  default_agent_provider: 'openai',
+  default_agent_model: 'gpt-5.4-mini',
   scan_max_items: 500,
   scan_max_file_mb: 25,
   scan_max_depth: 8,
@@ -167,14 +169,13 @@ function App() {
       .then(async (providerSettings) => {
         setSettings(providerSettings)
         if (!providerSettings.google_auth_enabled) {
-          return api.login('admin@example.com').then(async (loggedIn) => {
-            setUser(loggedIn)
-            await load(loggedIn)
-          })
+          setMessage('Google login is nog niet geconfigureerd.')
+          return undefined
         }
         const loggedIn = await api.session().catch(() => null)
         if (loggedIn) {
           setUser(loggedIn)
+          if (loggedIn.role === 'guest') return undefined
           await load(loggedIn)
         }
         return undefined
@@ -197,6 +198,18 @@ function App() {
     }, 1200)
     return () => window.clearInterval(timer)
   }, [scan, selectedWebsite])
+
+  useEffect(() => {
+    if (!activeAnalysis || ['completed', 'failed'].includes(activeAnalysis.status)) return
+    const timer = window.setInterval(async () => {
+      const fresh = await api.analysis(activeAnalysis.id)
+      setActiveAnalysis(fresh)
+      setAnalyses((rows) => rows.map((analysis) => (analysis.id === fresh.id ? fresh : analysis)))
+      if (fresh.status === 'completed') setMessage('Analyse afgerond.')
+      if (fresh.status === 'failed') setMessage(`Analyse mislukt: ${fresh.error}`)
+    }, 1200)
+    return () => window.clearInterval(timer)
+  }, [activeAnalysis?.id, activeAnalysis?.status])
 
   async function detectName() {
     setMessage('Bedrijfsnaam detecteren...')
@@ -305,6 +318,19 @@ function App() {
     setMessage('Analyseprompt opgeslagen.')
   }
 
+  async function deleteAnalysisJobResult(jobResultId: number) {
+    const analysisId = activeAnalysis?.id
+    if (!analysisId || !activeAnalysis.jobs.some((job) => job.id === jobResultId) || !window.confirm('Dit jobresultaat verwijderen?')) return
+    await api.deleteAnalysisJobResult(jobResultId)
+    const updateRun = (analysis: AnalysisRun): AnalysisRun => ({
+      ...analysis,
+      jobs: analysis.jobs.filter((job) => job.id !== jobResultId)
+    })
+    setAnalyses((rows) => rows.map((analysis) => (analysis.id === analysisId ? updateRun(analysis) : analysis)))
+    setActiveAnalysis((analysis) => (analysis && analysis.id === analysisId ? updateRun(analysis) : analysis))
+    setMessage('Jobresultaat verwijderd.')
+  }
+
   function toggleTheme() {
     setTheme((current) => {
       const next = current === 'dark' ? 'light' : 'dark'
@@ -313,16 +339,16 @@ function App() {
     })
   }
 
-  if (!user && settings.google_auth_enabled) {
+  if (!user) {
     return (
       <main className="guest-shell">
         <BuildInfo />
         <section className="guest-panel">
           <div className="guest-logo"><SmawaMark /></div>
           <ShieldCheck size={26} />
-          <h1>Inloggen met Google</h1>
-          <p>Gebruik je Google account om toegang tot companycrawler aan te vragen.</p>
-          <a className="google-login-button" href="/api/auth/google/start">Inloggen met Google</a>
+          <h1>{settings.google_auth_enabled ? 'Inloggen met Google' : 'Google login niet geconfigureerd'}</h1>
+          <p>{settings.google_auth_enabled ? 'Gebruik je Google account om toegang tot companycrawler aan te vragen.' : 'Configureer GOOGLE_CLIENT_ID en GOOGLE_CLIENT_SECRET in de omgeving om de eerste Google gebruiker admin te maken.'}</p>
+          {settings.google_auth_enabled && <a className="google-login-button" href="/api/auth/google/start">Inloggen met Google</a>}
           <GoogleOriginDiagnostics settings={settings} />
         </section>
       </main>
@@ -420,6 +446,7 @@ function App() {
           <AnalysisView
             analyses={analyses}
             activeAnalysis={activeAnalysis}
+            deleteAnalysisJobResult={deleteAnalysisJobResult}
             selectedWebsite={selectedWebsite}
             setActiveAnalysis={setActiveAnalysis}
             startAnalysis={startAnalysis}
@@ -431,8 +458,9 @@ function App() {
         {view === 'Users' && <UsersView users={users} refresh={async () => setUsers(await api.users())} />}
         {view === 'Settings' && (
           <SettingsView
-            key={`${settings.google_client_id}:${settings.app_url_origin}:${settings.default_summary_model}:${settings.default_embedding_model}`}
+            key={`${settings.google_client_id}:${settings.app_url_origin}:${settings.default_summary_model}:${settings.default_embedding_model}:${settings.default_agent_model}`}
             settings={settings}
+            models={models}
             prompts={analysisPrompts}
             setSettings={setSettings}
             saveAnalysisPrompt={saveAnalysisPrompt}
@@ -523,6 +551,17 @@ function formatDuration(totalSeconds: number) {
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
   return `${hours}u ${minutes}m ${seconds}s`
+}
+
+function formatElapsed(start: string | null, end: string | null, now: number) {
+  if (!start) return '0m 00s'
+  const started = new Date(start).getTime()
+  const ended = end ? new Date(end).getTime() : now
+  if (Number.isNaN(started) || Number.isNaN(ended)) return '0m 00s'
+  const totalSeconds = Math.max(0, Math.floor((ended - started) / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`
 }
 
 function formatMb(value: number) {
@@ -1110,18 +1149,38 @@ function connectorPath(from: MindNode, to: MindNode) {
 function AnalysisView({
   analyses,
   activeAnalysis,
+  deleteAnalysisJobResult,
   selectedWebsite,
   setActiveAnalysis,
   startAnalysis
 }: {
   analyses: AnalysisRun[]
   activeAnalysis: AnalysisRun | null
+  deleteAnalysisJobResult: (jobResultId: number) => void
   selectedWebsite: Website | null
   setActiveAnalysis: (analysis: AnalysisRun) => void
   startAnalysis: () => void
 }) {
   const [selectedPromptId, setSelectedPromptId] = useState<string>('')
+  const [now, setNow] = useState(() => Date.now())
   const selectedJob = activeAnalysis?.jobs.find((job) => job.prompt_id === selectedPromptId) ?? activeAnalysis?.jobs[0] ?? null
+  const runningJob = activeAnalysis?.jobs.find((job) => job.status === 'running') ?? null
+  const currentJobLabel = runningJob
+    ? runningJob.prompt_id.replace('job_', '').replace(/_/g, ' ')
+    : activeAnalysis?.status === 'completed'
+      ? 'afgerond'
+      : activeAnalysis?.status === 'failed'
+        ? 'mislukt'
+        : activeAnalysis?.status === 'queued'
+          ? 'wachten op eerste job'
+          : 'tussen jobs'
+  const elapsedLabel = activeAnalysis ? formatElapsed(activeAnalysis.started_at ?? activeAnalysis.created_at, activeAnalysis.completed_at, now) : '0m 00s'
+
+  useEffect(() => {
+    if (!activeAnalysis || activeAnalysis.completed_at) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [activeAnalysis?.id, activeAnalysis?.completed_at])
 
   return (
     <section className="analysis-layout">
@@ -1129,6 +1188,13 @@ function AnalysisView({
         <div className="panel-title"><ClipboardList size={18} /> Analyse-agent</div>
         <p className="body-text">{selectedWebsite ? `${selectedWebsite.company_name} wordt geanalyseerd met 9 vaste agent jobs.` : 'Selecteer eerst een website.'}</p>
         <button className="primary" onClick={startAnalysis} disabled={!selectedWebsite}><Sparkles size={17} /> Analyse starten</button>
+        {activeAnalysis && (
+          <div className="analysis-live-stats">
+            <span>Status: {activeAnalysis.status}</span>
+            <span>Bezig met: {currentJobLabel}</span>
+            <span>Duur: {elapsedLabel}</span>
+          </div>
+        )}
         <div className="table-list compact-list">
           {analyses.map((analysis) => (
             <button
@@ -1162,7 +1228,10 @@ function AnalysisView({
             </div>
             {selectedJob && (
               <div className="analysis-result">
-                <div className="status-line">{selectedJob.status} · {selectedJob.completed_at ? new Date(selectedJob.completed_at).toLocaleString() : 'bezig'}</div>
+                <div className="analysis-result-header">
+                  <div className="status-line">{selectedJob.status} - {selectedJob.completed_at ? new Date(selectedJob.completed_at).toLocaleString() : 'bezig'}</div>
+                  <button className="danger" title="Jobresultaat verwijderen" disabled={selectedJob.status === 'queued' || selectedJob.status === 'running'} onClick={() => deleteAnalysisJobResult(selectedJob.id)}><Trash2 size={16} /></button>
+                </div>
                 {selectedJob.error && <pre className="scan-error">{selectedJob.error}</pre>}
                 <p>{selectedJob.summary || 'Geen samenvatting beschikbaar.'}</p>
                 <pre>{selectedJob.result_json ? JSON.stringify(selectedJob.result_json, null, 2) : selectedJob.result_text}</pre>
@@ -1263,12 +1332,14 @@ function UsersView({ users, refresh }: { users: User[]; refresh: () => void }) {
 
 function SettingsView({
   settings,
+  models,
   prompts,
   setSettings,
   saveAnalysisPrompt,
   refresh
 }: {
   settings: ProviderSettings
+  models: ModelConfig[]
   prompts: AnalysisPrompt[]
   setSettings: (settings: ProviderSettings) => void
   saveAnalysisPrompt: (promptId: string, promptText: string) => Promise<void>
@@ -1279,7 +1350,11 @@ function SettingsView({
   const [googleClientId, setGoogleClientId] = useState(settings.google_client_id)
   const [googleClientSecret, setGoogleClientSecret] = useState('')
   const [summaryModel, setSummaryModel] = useState(settings.default_summary_model)
+  const [summaryProvider, setSummaryProvider] = useState(settings.default_summary_provider)
   const [embeddingModel, setEmbeddingModel] = useState(settings.default_embedding_model)
+  const [embeddingProvider, setEmbeddingProvider] = useState(settings.default_embedding_provider)
+  const [agentModel, setAgentModel] = useState(settings.default_agent_model)
+  const [agentProvider, setAgentProvider] = useState(settings.default_agent_provider)
   const [scanMaxItems, setScanMaxItems] = useState(settings.scan_max_items)
   const [scanMaxFileMb, setScanMaxFileMb] = useState(settings.scan_max_file_mb)
   const [scanMaxDepth, setScanMaxDepth] = useState(settings.scan_max_depth)
@@ -1292,10 +1367,12 @@ function SettingsView({
       openrouter_api_key: openrouterKey,
       google_client_id: googleClientId,
       google_client_secret: googleClientSecret,
-      default_summary_provider: settings.default_summary_provider,
+      default_summary_provider: summaryProvider,
       default_summary_model: summaryModel,
-      default_embedding_provider: settings.default_embedding_provider,
+      default_embedding_provider: embeddingProvider,
       default_embedding_model: embeddingModel,
+      default_agent_provider: agentProvider,
+      default_agent_model: agentModel,
       scan_max_items: scanMaxItems,
       scan_max_file_mb: scanMaxFileMb,
       scan_max_depth: scanMaxDepth,
@@ -1335,9 +1412,41 @@ function SettingsView({
           <label>Nieuwe OpenRouter API key</label>
           <input type="password" value={openrouterKey} onChange={(event) => setOpenrouterKey(event.target.value)} placeholder={settings.openrouter_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-or-...'} />
           <label>Default summary model</label>
-          <input value={summaryModel} onChange={(event) => setSummaryModel(event.target.value)} />
+          <ModelSelect
+            models={models}
+            provider={summaryProvider}
+            model={summaryModel}
+            purposes={['chat', 'reasoning', 'multimodal', 'summary']}
+            recommendedLabel="Aanbevolen voor agent-analyse"
+            onChange={(next) => {
+              setSummaryProvider(next.provider)
+              setSummaryModel(next.model)
+            }}
+          />
           <label>Default embedding model</label>
-          <input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} />
+          <ModelSelect
+            models={models}
+            provider={embeddingProvider}
+            model={embeddingModel}
+            purposes={['embedding']}
+            recommendedLabel="Aanbevolen voor embeddings"
+            onChange={(next) => {
+              setEmbeddingProvider(next.provider)
+              setEmbeddingModel(next.model)
+            }}
+          />
+          <label>Default agent model</label>
+          <ModelSelect
+            models={models}
+            provider={agentProvider}
+            model={agentModel}
+            purposes={['chat', 'reasoning', 'multimodal', 'summary']}
+            recommendedLabel="Aanbevolen voor agent-analyse"
+            onChange={(next) => {
+              setAgentProvider(next.provider)
+              setAgentModel(next.model)
+            }}
+          />
           <button className="primary" onClick={save}><Save size={17} /> Instellingen opslaan</button>
         </div>
       )}
@@ -1394,6 +1503,54 @@ function SettingsView({
         </div>
       )}
     </section>
+  )
+}
+
+function ModelSelect({
+  models,
+  provider,
+  model,
+  purposes,
+  recommendedLabel,
+  onChange
+}: {
+  models: ModelConfig[]
+  provider: string
+  model: string
+  purposes: string[]
+  recommendedLabel: string
+  onChange: (value: { provider: string; model: string }) => void
+}) {
+  const candidates = models
+    .filter((item) => purposes.includes(item.purpose))
+    .sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model))
+  const selectedKey = `${provider}||${model}`
+  const selected = candidates.find((item) => `${item.provider}||${item.model}` === selectedKey)
+  const hasSelected = Boolean(selected)
+
+  function handleChange(value: string) {
+    const [nextProvider, nextModel] = value.split('||')
+    onChange({ provider: nextProvider || provider, model: nextModel || model })
+  }
+
+  return (
+    <div className={selected?.is_default ? 'model-select recommended-model' : 'model-select'}>
+      <select value={selectedKey} onChange={(event) => handleChange(event.target.value)}>
+        {!hasSelected && <option value={selectedKey}>{provider} - {model} - handmatig ingesteld</option>}
+        {candidates.map((item) => (
+          <option value={`${item.provider}||${item.model}`} key={`${item.provider}:${item.model}`}>
+            {item.is_default ? '** ' : ''}{item.provider} - {item.model} - {item.purpose} - {compactTitle(item.best_for, 120)}
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <div className="model-select-meta">
+          {selected.is_default && <span className="recommended-badge">{recommendedLabel}</span>}
+          <small>{selected.provider} - {selected.model} - {selected.purpose}</small>
+          <p>{selected.best_for}</p>
+        </div>
+      )}
+    </div>
   )
 }
 

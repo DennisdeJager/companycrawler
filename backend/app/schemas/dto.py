@@ -170,6 +170,8 @@ class ProviderSettingsRead(BaseModel):
     default_summary_model: str
     default_embedding_provider: str
     default_embedding_model: str
+    default_agent_provider: str
+    default_agent_model: str
     scan_max_items: int
     scan_max_file_mb: int
     scan_max_depth: int
@@ -186,6 +188,8 @@ class ProviderSettingsUpdate(BaseModel):
     default_summary_model: str | None = None
     default_embedding_provider: str | None = None
     default_embedding_model: str | None = None
+    default_agent_provider: str | None = None
+    default_agent_model: str | None = None
     scan_max_items: int | None = Field(default=None, ge=1)
     scan_max_file_mb: int | None = Field(default=None, ge=1)
     scan_max_depth: int | None = Field(default=None, ge=1)

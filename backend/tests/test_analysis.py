@@ -3,7 +3,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.core.database import Base
-from app.models import AnalysisPrompt, Website
+from app.api.routes import delete_analysis_job_result
+from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, Website
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts
 
 
@@ -64,3 +65,26 @@ async def test_run_company_analysis_stores_all_jobs(db_session, monkeypatch) -> 
     assert run.status == "completed"
     assert len(run.job_results) == 9
     assert '"Bedrijfsplaats": "Amsterdam"' in run.extracted_variables
+
+
+def test_delete_analysis_job_result_removes_result_and_insight(db_session) -> None:
+    seed_default_analysis_prompts(db_session)
+    website = Website(url="https://example.com", company_name="Example", logo_url="")
+    db_session.add(website)
+    db_session.commit()
+    db_session.refresh(website)
+    run = AnalysisRun(website_id=website.id, status="completed")
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+    job = AnalysisJobResult(analysis_run_id=run.id, prompt_id="job_2_bedrijfsprofiel", status="completed", result_text="klaar")
+    insight = AnalysisInsight(analysis_run_id=run.id, website_id=website.id, prompt_id="job_2_bedrijfsprofiel", text="klaar")
+    db_session.add_all([job, insight])
+    db_session.commit()
+    db_session.refresh(job)
+
+    response = delete_analysis_job_result(job.id, db_session)
+
+    assert response == {"status": "deleted"}
+    assert db_session.get(AnalysisJobResult, job.id) is None
+    assert db_session.query(AnalysisInsight).filter(AnalysisInsight.analysis_run_id == run.id).count() == 0

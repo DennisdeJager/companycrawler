@@ -29,8 +29,20 @@ class AIService:
         return get_setting(self.db, "default_summary_model", self.settings.default_summary_model)
 
     @property
+    def summary_provider(self) -> str:
+        return get_setting(self.db, "default_summary_provider", self.settings.default_summary_provider)
+
+    @property
     def embedding_model(self) -> str:
         return get_setting(self.db, "default_embedding_model", self.settings.default_embedding_model)
+
+    @property
+    def agent_provider(self) -> str:
+        return get_setting(self.db, "default_agent_provider", self.settings.default_agent_provider)
+
+    @property
+    def agent_model(self) -> str:
+        return get_setting(self.db, "default_agent_model", self.settings.default_agent_model)
 
     async def detect_company_name(self, url: str, homepage_text: str) -> str:
         title_match = re.search(r"<title>(.*?)</title>", homepage_text, re.I | re.S)
@@ -38,7 +50,7 @@ class AIService:
         clean = re.sub(r"\s+", " ", seed).strip()
         if self.openai_api_key:
             prompt = f"Extract only the full company name from this homepage text for {url}. Return only the name.\n\n{clean[:4000]}"
-            result = await self._chat_openai(prompt, max_tokens=80)
+            result = await self._chat_provider("openai", self.summary_model, prompt, max_tokens=80)
             if result:
                 return result.strip().strip('"')
         host = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
@@ -46,14 +58,14 @@ class AIService:
 
     async def summarize(self, title: str, text: str) -> tuple[str, str]:
         clean = re.sub(r"\s+", " ", text).strip()
-        if self.openai_api_key:
+        if self._provider_has_key(self.summary_provider):
             prompt = (
                 "Vat deze pagina of dit bestand in maximaal 2 korte regels samen. "
                 "Vertel bondig waar de content over gaat. Geef daarna op een nieuwe regel "
                 "een ultrakorte 1-regel tree summary voorafgegaan door TREE:.\n\n"
                 f"Titel: {title}\nContent: {clean[:6000]}"
             )
-            result = await self._chat_openai(prompt, max_tokens=180)
+            result = await self._chat_provider(self.summary_provider, self.summary_model, prompt, max_tokens=180)
             if result:
                 lines = [line.strip() for line in result.splitlines() if line.strip()]
                 tree = next((line[5:].strip() for line in lines if line.lower().startswith("tree:")), "")
@@ -63,8 +75,8 @@ class AIService:
         return fallback, fallback[:180]
 
     async def complete(self, prompt: str, max_tokens: int = 1400) -> str:
-        if self.openai_api_key:
-            result = await self._chat_openai(prompt, max_tokens=max_tokens)
+        if self._provider_has_key(self.agent_provider):
+            result = await self._chat_provider(self.agent_provider, self.agent_model, prompt, max_tokens=max_tokens)
             if result:
                 return result
         return self._fallback_completion(prompt)
@@ -92,20 +104,112 @@ class AIService:
             models.extend(await self._list_openrouter_models())
         if not models:
             models = [
-                {"provider": "openai", "model": self.summary_model, "purpose": "summary", "best_for": "Goede balans tussen kwaliteit en kosten voor samenvattingen."},
-                {"provider": "openai", "model": self.embedding_model, "purpose": "embedding", "best_for": "Standaard embeddings voor semantische zoekopdrachten."},
-                {"provider": "openrouter", "model": "openrouter/auto", "purpose": "summary", "best_for": "Fallback-routering wanneer OpenRouter is geconfigureerd."},
+                self._model_info("openai", self.summary_model, "chat"),
+                self._model_info("openai", self.embedding_model, "embedding"),
+                self._model_info("openrouter", "openrouter/auto", "chat"),
             ]
+        recommended = await self.recommend_agent_model(models)
+        recommended_embedding = await self.recommend_embedding_model(models)
+        for model in models:
+            model["is_default"] = (
+                (model["provider"] == recommended["provider"] and model["model"] == recommended["model"])
+                or (model["provider"] == recommended_embedding["provider"] and model["model"] == recommended_embedding["model"])
+            )
         return models
 
-    async def _chat_openai(self, prompt: str, max_tokens: int) -> str:
+    async def recommend_agent_model(self, models: list[dict[str, str]]) -> dict[str, str]:
+        candidates = [model for model in models if model.get("purpose") != "embedding"]
+        if not candidates:
+            return {"provider": self.agent_provider, "model": self.agent_model}
+        if not self._provider_has_key(self.summary_provider):
+            return self._local_agent_recommendation(candidates)
+
+        catalog = "\n".join(
+            f"- {item['provider']} | {item['model']} | {item.get('purpose', 'chat')} | {item.get('best_for', '')[:220]}"
+            for item in candidates[:80]
+        )
+        prompt = (
+            "Kies uit deze modelcatalogus precies een aanbevolen LLM voor agentische analyses van bedrijfsdomeinen. "
+            "We analyseren publieke websitecontent, bedrijfsprofielen, uitdagingen, concurrenten, personen, social links, marktcontext en technologie-indicaties. "
+            "Balans: hoge Nederlandse analysek kwaliteit, betrouwbare JSON-output, goede redeneercapaciteit en redelijke kosten. "
+            "Geef alleen JSON terug met keys provider, model en reden.\n\n"
+            f"Catalogus:\n{catalog}"
+        )
+        text = await self._chat_provider(self.summary_provider, self.summary_model, prompt, max_tokens=300)
+        try:
+            parsed = json.loads(re.search(r"\{.*\}", text, flags=re.S).group(0) if text else "{}")
+            provider = str(parsed.get("provider", "")).strip()
+            model = str(parsed.get("model", "")).strip()
+            if any(item["provider"] == provider and item["model"] == model for item in candidates):
+                return {"provider": provider, "model": model}
+        except Exception:
+            pass
+        return self._local_agent_recommendation(candidates)
+
+    async def recommend_embedding_model(self, models: list[dict[str, str]]) -> dict[str, str]:
+        candidates = [model for model in models if model.get("purpose") == "embedding"]
+        if not candidates:
+            return {"provider": "openai", "model": self.embedding_model}
+        if not self._provider_has_key(self.summary_provider):
+            return self._local_embedding_recommendation(candidates)
+
+        catalog = "\n".join(
+            f"- {item['provider']} | {item['model']} | {item.get('best_for', '')[:220]}"
+            for item in candidates[:60]
+        )
+        prompt = (
+            "Kies uit deze embedding-modelcatalogus precies een aanbevolen model voor vectoropslag en semantisch zoeken "
+            "op gecrawlde bedrijfswebsites. Balans: kwaliteit voor Nederlandse tekst, retrieval, kosten en brede beschikbaarheid. "
+            "Geef alleen JSON terug met keys provider, model en reden.\n\n"
+            f"Catalogus:\n{catalog}"
+        )
+        text = await self._chat_provider(self.summary_provider, self.summary_model, prompt, max_tokens=260)
+        try:
+            parsed = json.loads(re.search(r"\{.*\}", text, flags=re.S).group(0) if text else "{}")
+            provider = str(parsed.get("provider", "")).strip()
+            model = str(parsed.get("model", "")).strip()
+            if any(item["provider"] == provider and item["model"] == model for item in candidates):
+                return {"provider": provider, "model": model}
+        except Exception:
+            pass
+        return self._local_embedding_recommendation(candidates)
+
+    async def _chat_provider(self, provider: str, model: str, prompt: str, max_tokens: int) -> str:
+        provider = (provider or "openai").lower()
+        if provider == "openrouter":
+            return await self._chat_openrouter(model, prompt, max_tokens)
+        return await self._chat_openai(model, prompt, max_tokens)
+
+    async def _chat_openai(self, model: str, prompt: str, max_tokens: int) -> str:
         try:
             async with httpx.AsyncClient(timeout=45) as client:
                 response = await client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {self.openai_api_key}"},
                     json={
-                        "model": self.summary_model,
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": max_tokens,
+                        "temperature": 0.2,
+                    },
+                )
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"].strip()
+        except Exception:
+            return ""
+
+    async def _chat_openrouter(self, model: str, prompt: str, max_tokens: int) -> str:
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.openrouter_api_key}",
+                        "HTTP-Referer": self.settings.app_url,
+                        "X-Title": self.settings.app_name,
+                    },
+                    json={
+                        "model": model,
                         "messages": [{"role": "user", "content": prompt}],
                         "max_tokens": max_tokens,
                         "temperature": 0.2,
@@ -122,7 +226,7 @@ class AIService:
                 response = await client.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {self.openai_api_key}"})
                 response.raise_for_status()
                 return [
-                    {"provider": "openai", "model": item["id"], "purpose": "summary", "best_for": "Beschikbaar OpenAI model voor extractie en samenvattingen."}
+                    self._model_info("openai", item["id"], self._classify_model(item["id"]))
                     for item in response.json().get("data", [])[:100]
                 ]
         except Exception:
@@ -134,11 +238,65 @@ class AIService:
                 response = await client.get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {self.openrouter_api_key}"})
                 response.raise_for_status()
                 return [
-                    {"provider": "openrouter", "model": item["id"], "purpose": "summary", "best_for": item.get("description", "OpenRouter model voor samenvattingen.")[:500]}
+                    self._model_info(
+                        "openrouter",
+                        item["id"],
+                        self._classify_model(item["id"], str(item.get("architecture", {}).get("modality", ""))),
+                        item.get("description", ""),
+                    )
                     for item in response.json().get("data", [])[:100]
                 ]
         except Exception:
             return []
+
+    def _provider_has_key(self, provider: str) -> bool:
+        provider = (provider or "openai").lower()
+        if provider == "openrouter":
+            return bool(self.openrouter_api_key)
+        return bool(self.openai_api_key)
+
+    def _classify_model(self, model: str, modality: str = "") -> str:
+        name = f"{model} {modality}".lower()
+        if "embed" in name:
+            return "embedding"
+        if any(token in name for token in ["image", "vision", "omni", "audio", "tts", "whisper"]):
+            return "multimodal"
+        if any(token in name for token in ["reason", "o1", "o3", "o4", "gpt-5"]):
+            return "reasoning"
+        return "chat"
+
+    def _model_info(self, provider: str, model: str, purpose: str, description: str = "") -> dict[str, str]:
+        strengths = {
+            "embedding": "Goed voor vectoropslag en semantisch zoeken; niet geschikt voor tekstgeneratie of agent-analyses.",
+            "reasoning": "Goed voor diepere analyse, structuur, JSON-output en complexe afwegingen; meestal duurder en trager dan lichte chatmodellen.",
+            "multimodal": "Goed wanneer beeld, audio of gemengde input nodig is; vaak overkill voor pure tekstanalyses.",
+            "chat": "Goed voor samenvattingen, extractie en algemene teksttaken; minder sterk dan reasoning-modellen bij complexe agentstappen.",
+        }
+        text = description.strip() or strengths.get(purpose, strengths["chat"])
+        if "Goed voor" not in text and "Niet goed" not in text:
+            text = f"{text[:360]} Goed/niet goed: {strengths.get(purpose, strengths['chat'])}"
+        return {"provider": provider, "model": model, "purpose": purpose, "best_for": text[:512]}
+
+    def _local_agent_recommendation(self, models: list[dict[str, str]]) -> dict[str, str]:
+        configured = next((item for item in models if item["provider"] == self.agent_provider and item["model"] == self.agent_model), None)
+        if configured:
+            return configured
+        for preferred in ["gpt-5.4-mini", "gpt-5.4", "gpt-4.1", "openrouter/auto"]:
+            match = next((item for item in models if item["model"] == preferred), None)
+            if match:
+                return match
+        non_embedding = next((item for item in models if item.get("purpose") != "embedding"), models[0])
+        return non_embedding
+
+    def _local_embedding_recommendation(self, models: list[dict[str, str]]) -> dict[str, str]:
+        configured = next((item for item in models if item["provider"] == "openai" and item["model"] == self.embedding_model), None)
+        if configured:
+            return configured
+        for preferred in ["text-embedding-3-small", "text-embedding-3-large"]:
+            match = next((item for item in models if item["model"] == preferred), None)
+            if match:
+                return match
+        return models[0]
 
     def _local_embedding(self, text: str) -> list[float]:
         tokens = re.findall(r"[a-z0-9]+", text.lower())
@@ -156,7 +314,7 @@ class AIService:
             return json.dumps({"Bedrijfsnaam": "onbekend", "Bedrijfsplaats": "onbekend", "Regio": "onbekend"}, ensure_ascii=False)
         return json.dumps(
             {
-                "samenvatting": "Lokale fallback: configureer een OpenAI API key voor volledige AI-analyse.",
+                "samenvatting": "Lokale fallback: configureer een OpenAI of OpenRouter API key voor volledige AI-analyse.",
                 "bewijsniveau": "ai_hypothese",
                 "opmerking": "Deze output is deterministisch gegenereerd omdat er geen AI-provider beschikbaar is.",
             },

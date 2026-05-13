@@ -2,6 +2,8 @@
 
 ## Done
 
+- [x] Settings uitgebreid met centrale modelselecties voor summary, embeddings en agent-analyse, inclusief aanbevolen modellen uit de AI-catalogus.
+- [x] Development login met `admin@example.com` verwijderd; eerste Google gebruiker wordt admin en latere gebruikers blijven guest tot roltoekenning.
 - [x] Actieve website-selectie wordt per gebruiker onthouden na een page reload.
 - [x] Settings opgesplitst in tabbladen voor providers, Google authenticatie, crawl instellingen en promptbeheer.
 - [x] Agentische analyseflow met beheerbare prompts, analyse-opslag, REST/MCP tools en Analyse UI toegevoegd.
@@ -11,6 +13,7 @@
 - [x] Mailto-links uit crawls geweerd, duplicate graph nodes op content-hash samengevoegd en content inspector scrollbaar gemaakt.
 - [x] Mailto-adressen blijven beschikbaar in crawltekst en vector chunks zonder als losse pagina's te worden gecrawld.
 - [x] Dashboard scanbediening voor starten, pauzeren en stoppen toegevoegd; reset verwijdert website crawl-data inclusief graph chunks.
+- [x] Analysejobs draaien live op de achtergrond met actuele jobstatus, duurweergave en verwijderbare jobresultaten.
 
 - [x] Knowledge Graph mindmap, crawler deduplicatie, scanstatistieken en instelbare parallelle crawlverwerking toegevoegd.
 - [x] Bedrijfslogo-detectie, Smawa huisstijl-logo, dark theme en hiërarchische dashboard tree toegevoegd.

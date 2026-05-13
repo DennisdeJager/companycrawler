@@ -1,13 +1,13 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.database import get_db
-from app.models import AnalysisPrompt, AnalysisRun, ContentChunk, Document, ModelConfig, ScanJob, User, Website
+from app.core.database import SessionLocal, get_db
+from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, ContentChunk, Document, ModelConfig, ScanJob, User, Website
 from app.models.entities import ScanStatus, UserRole
 from app.schemas.dto import (
     DocumentDetail,
@@ -423,8 +423,13 @@ def update_analysis_prompt(prompt_id: str, payload: AnalysisPromptUpdate, db: Se
 
 
 @router.post("/websites/{website_id}/analyses", response_model=AnalysisRunRead)
-async def create_analysis(website_id: int, db: Session = Depends(get_db)) -> dict:
-    return serialize_analysis_run(await AnalysisService(db).run_company_analysis(website_id))
+async def create_analysis(website_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
+    try:
+        run = AnalysisService(db).create_company_analysis(website_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    background_tasks.add_task(_run_analysis_background, run.id)
+    return serialize_analysis_run(run)
 
 
 @router.get("/websites/{website_id}/analyses", response_model=list[AnalysisRunRead])
@@ -441,19 +446,48 @@ def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
     return serialize_analysis_run(run)
 
 
+async def _run_analysis_background(analysis_id: int) -> None:
+    db = SessionLocal()
+    try:
+        await AnalysisService(db).run_analysis(analysis_id)
+    finally:
+        db.close()
+
+
+@router.delete("/analysis-job-results/{job_result_id}")
+def delete_analysis_job_result(job_result_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+    job_result = db.get(AnalysisJobResult, job_result_id)
+    if not job_result:
+        raise HTTPException(status_code=404, detail="Analysis job result not found")
+    if job_result.status in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="Analysis job result is still running")
+    db.query(AnalysisInsight).filter(
+        AnalysisInsight.analysis_run_id == job_result.analysis_run_id,
+        AnalysisInsight.prompt_id == job_result.prompt_id,
+    ).delete(synchronize_session=False)
+    db.delete(job_result)
+    db.commit()
+    return {"status": "deleted"}
+
+
 @router.get("/models", response_model=list[ModelConfigRead])
 async def list_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
-    if db.query(ModelConfig).count() == 0:
-        for item in await AIService(db).list_models():
-            db.add(ModelConfig(**item))
-        db.commit()
+    has_catalog = db.query(ModelConfig).count() > 0
+    has_embedding_models = db.query(ModelConfig).filter(ModelConfig.purpose == "embedding").count() > 0
+    has_recommendations = db.query(ModelConfig).filter(ModelConfig.is_default.is_(True)).count() > 0
+    if not has_catalog or not has_embedding_models or not has_recommendations:
+        await _refresh_model_catalog(db)
     return db.query(ModelConfig).order_by(ModelConfig.provider, ModelConfig.model).all()
 
 
 @router.post("/models/refresh", response_model=list[ModelConfigRead])
 async def refresh_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
+    await _refresh_model_catalog(db)
+    return db.query(ModelConfig).order_by(ModelConfig.provider, ModelConfig.model).all()
+
+
+async def _refresh_model_catalog(db: Session) -> None:
     db.query(ModelConfig).delete()
     for item in await AIService(db).list_models():
         db.add(ModelConfig(**item))
     db.commit()
-    return db.query(ModelConfig).order_by(ModelConfig.provider, ModelConfig.model).all()

@@ -78,6 +78,8 @@ export type ProviderSettings = {
   default_summary_model: string
   default_embedding_provider: string
   default_embedding_model: string
+  default_agent_provider: string
+  default_agent_model: string
   scan_max_items: number
   scan_max_file_mb: number
   scan_max_depth: number
@@ -159,5 +161,6 @@ export const api = {
   analyses: (websiteId: number) => request<AnalysisRun[]>(`/api/websites/${websiteId}/analyses`),
   startAnalysis: (websiteId: number) => request<AnalysisRun>(`/api/websites/${websiteId}/analyses`, { method: 'POST' }),
   analysis: (analysisId: number) => request<AnalysisRun>(`/api/analyses/${analysisId}`),
+  deleteAnalysisJobResult: (jobResultId: number) => request<{ status: string }>(`/api/analysis-job-results/${jobResultId}`, { method: 'DELETE' }),
   mcp: () => request<{ tools: { name: string; description: string }[] }>('/mcp')
 }

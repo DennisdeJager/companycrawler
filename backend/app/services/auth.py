@@ -30,6 +30,10 @@ def has_real_google_admin(db: Session) -> bool:
     )
 
 
+def remove_dev_admin_user(db: Session) -> None:
+    db.query(User).filter(User.email == "admin@example.com", User.google_sub.startswith("dev-")).delete(synchronize_session=False)
+
+
 def google_redirect_uri() -> str:
     settings = get_settings()
     return f"{settings.app_url.rstrip('/')}/api/auth/google/callback"
@@ -54,6 +58,8 @@ def new_oauth_state() -> str:
 
 
 def _upsert_google_user(db: Session, email: str, name: str, google_sub: str, is_google_oauth: bool) -> User:
+    if is_google_oauth:
+        remove_dev_admin_user(db)
     user = db.query(User).filter(User.google_sub == google_sub).first()
     if not user:
         role = UserRole.admin if is_google_oauth and not has_real_google_admin(db) else UserRole.guest
@@ -76,10 +82,6 @@ def login_with_google(db: Session, credential: str) -> User:
         email = payload["email"]
         name = payload.get("name", email)
         google_sub = payload["sub"]
-    elif settings.app_env == "development":
-        email = credential if "@" in credential else "admin@example.com"
-        name = email.split("@")[0].title()
-        google_sub = f"dev-{email}"
     else:
         raise ValueError("Google OAuth is not configured")
 

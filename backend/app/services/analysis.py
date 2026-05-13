@@ -346,17 +346,35 @@ class AnalysisService:
         self.ai = AIService(db)
         self.settings = get_settings()
 
-    async def run_company_analysis(self, website_id: int) -> AnalysisRun:
+    def create_company_analysis(self, website_id: int) -> AnalysisRun:
         website = self.db.get(Website, website_id)
         if not website:
             raise ValueError("Website not found")
         seed_default_analysis_prompts(self.db)
-        run = AnalysisRun(website_id=website_id, status="running", model=self.ai.summary_model, started_at=datetime.utcnow())
+        run = AnalysisRun(website_id=website_id, status="queued", model=f"{self.ai.agent_provider}:{self.ai.agent_model}")
         self.db.add(run)
         self.db.commit()
         self.db.refresh(run)
+        return run
+
+    async def run_company_analysis(self, website_id: int) -> AnalysisRun:
+        run = self.create_company_analysis(website_id)
+        return await self.run_analysis(run.id)
+
+    async def run_analysis(self, analysis_id: int) -> AnalysisRun:
+        run = self.db.get(AnalysisRun, analysis_id)
+        if not run:
+            raise ValueError("Analysis not found")
+        website = self.db.get(Website, run.website_id)
+        if not website:
+            raise ValueError("Website not found")
+        seed_default_analysis_prompts(self.db)
+        run.status = "running"
+        run.started_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(run)
         try:
-            context, sources = self._build_context(website_id)
+            context, sources = self._build_context(run.website_id)
             variables = await self._run_job(run, "job_1_code_fields", {}, context, sources, include_general=False)
             extracted = self._normalize_variables(variables, website)
             run.extracted_variables = json.dumps(extracted, ensure_ascii=False)

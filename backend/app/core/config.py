@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     default_summary_model: str = "gpt-5.4-mini"
     default_embedding_provider: str = "openai"
     default_embedding_model: str = "text-embedding-3-small"
+    default_agent_provider: str = "openai"
+    default_agent_model: str = "gpt-5.4-mini"
     scan_max_items: int = 500
     scan_max_file_mb: int = 25
     scan_max_depth: int = 8
