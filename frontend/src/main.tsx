@@ -12,6 +12,7 @@ import {
   KeyRound,
   Moon,
   Network,
+  Pause,
   Pencil,
   Play,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Square,
   Sun,
   Trash2,
   Users
@@ -134,7 +136,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!scan || ['completed', 'failed'].includes(scan.status)) return
+    if (!scan || ['completed', 'failed', 'stopped'].includes(scan.status)) return
     const timer = window.setInterval(async () => {
       const fresh = await api.getScan(scan.id)
       setScan(fresh)
@@ -178,6 +180,13 @@ function App() {
   }
 
   async function startScan() {
+    if (scan?.status === 'paused') {
+      const resumed = await api.resumeScan(scan.id)
+      setScan(resumed)
+      setMessage('Scan hervat. Voortgang wordt realtime bijgewerkt.')
+      setView('Dashboard')
+      return
+    }
     const website = selectedWebsite?.url === formUrl && !editWebsiteId ? selectedWebsite : await saveWebsite()
     setScan({
       id: 0,
@@ -200,6 +209,20 @@ function App() {
     const created = await api.startScan(website.id)
     setScan(created)
     setMessage('Scan gestart. Voortgang wordt realtime bijgewerkt.')
+  }
+
+  async function pauseScan() {
+    if (!scan || !['queued', 'running'].includes(scan.status)) return
+    const paused = await api.pauseScan(scan.id)
+    setScan(paused)
+    setMessage('Scan gepauzeerd.')
+  }
+
+  async function stopScan() {
+    if (!scan || !['queued', 'running', 'paused'].includes(scan.status)) return
+    const stopped = await api.stopScan(scan.id)
+    setScan(stopped)
+    setMessage('Scan gestopt.')
   }
 
   async function deleteWebsite(website: Website) {
@@ -300,6 +323,9 @@ function App() {
             selectedDocument={selectedDocument}
             selectedWebsite={selectedWebsite}
             setSelectedDocument={setSelectedDocument}
+            startScan={startScan}
+            pauseScan={pauseScan}
+            stopScan={stopScan}
           />
         )}
 
@@ -324,7 +350,7 @@ function App() {
           />
         )}
 
-        {view === 'Scans' && <ScansView activeModel={activeModel} message={message} scan={scan} startScan={startScan} />}
+        {view === 'Scans' && <ScansView activeModel={activeModel} message={message} scan={scan} startScan={startScan} pauseScan={pauseScan} stopScan={stopScan} />}
         {view === 'Knowledge Graph' && <KnowledgeView documents={documents} selectedDocument={selectedDocument} selectedWebsite={selectedWebsite} setSelectedDocument={setSelectedDocument} />}
         {view === 'API Docs' && <DocsView />}
         {view === 'MCP Server' && <McpView />}
@@ -360,10 +386,20 @@ function Dashboard(props: {
   selectedDocument: DocumentItem | null
   selectedWebsite: Website | null
   setSelectedDocument: (doc: DocumentItem) => void
+  startScan: () => void
+  pauseScan: () => void
+  stopScan: () => void
 }) {
   return (
     <section className="dashboard-layout">
-      <ProgressPanel scan={props.scan} documents={props.documents} message={props.message} />
+      <ProgressPanel
+        scan={props.scan}
+        documents={props.documents}
+        message={props.message}
+        startScan={props.startScan}
+        pauseScan={props.pauseScan}
+        stopScan={props.stopScan}
+      />
       <TreePanel documents={props.documents} selectedDocument={props.selectedDocument} setSelectedDocument={props.setSelectedDocument} />
       <Inspector document={props.selectedDocument} website={props.selectedWebsite} />
     </section>
@@ -418,9 +454,25 @@ function formatMb(value: number) {
   return `${value.toFixed(2)} MB`
 }
 
-function ProgressPanel({ scan, documents, message }: { scan: Scan | null; documents: DocumentItem[]; message: string }) {
+function ProgressPanel({
+  scan,
+  documents,
+  message,
+  startScan,
+  pauseScan,
+  stopScan
+}: {
+  scan: Scan | null
+  documents: DocumentItem[]
+  message: string
+  startScan: () => void
+  pauseScan: () => void
+  stopScan: () => void
+}) {
   const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
   const elapsedSeconds = scan ? scan.duration_seconds || secondsBetween(scan.started_at ?? scan.created_at, scan.completed_at) : 0
+  const canPause = scan ? ['queued', 'running'].includes(scan.status) : false
+  const canStop = scan ? ['queued', 'running', 'paused'].includes(scan.status) : false
   return (
     <div className={scan?.status === 'running' ? 'panel progress-panel scanning' : 'panel progress-panel'}>
       <div className="panel-title"><Activity size={18} /> Realtime scan voortgang</div>
@@ -437,6 +489,11 @@ function ProgressPanel({ scan, documents, message }: { scan: Scan | null; docume
         <dt>Vector DB</dt><dd>{formatMb(scan?.vector_db_size_mb ?? 0)}</dd>
         <dt>Parallel</dt><dd>{scan?.scan_max_parallel_items ?? '-'} taken</dd>
       </dl>
+      <div className="scan-control-row">
+        <button className="primary" onClick={startScan}><Play size={17} /> Start</button>
+        <button className="secondary" onClick={pauseScan} disabled={!canPause}><Pause size={17} /> Pauze</button>
+        <button className="danger" onClick={stopScan} disabled={!canStop}><Square size={16} /> Stop</button>
+      </div>
     </div>
   )
 }
@@ -636,10 +693,26 @@ function WebsitesView(props: {
   )
 }
 
-function ScansView({ activeModel, message, scan, startScan }: { activeModel?: ModelConfig; message: string; scan: Scan | null; startScan: () => void }) {
+function ScansView({
+  activeModel,
+  message,
+  scan,
+  startScan,
+  pauseScan,
+  stopScan
+}: {
+  activeModel?: ModelConfig
+  message: string
+  scan: Scan | null
+  startScan: () => void
+  pauseScan: () => void
+  stopScan: () => void
+}) {
+  const canPause = scan ? ['queued', 'running'].includes(scan.status) : false
+  const canStop = scan ? ['queued', 'running', 'paused'].includes(scan.status) : false
   return (
     <section className="split-layout">
-      <ProgressPanel scan={scan} documents={[]} message={message} />
+      <ProgressPanel scan={scan} documents={[]} message={message} startScan={startScan} pauseScan={pauseScan} stopScan={stopScan} />
       <div className="panel">
         <div className="panel-title"><Play size={18} /> Scan bediening</div>
         <p className="body-text">Start een scan voor de actieve website. De voortgang verschijnt direct op Dashboard en hier.</p>
@@ -647,7 +720,11 @@ function ScansView({ activeModel, message, scan, startScan }: { activeModel?: Mo
           <dt>Model</dt><dd>{activeModel ? `${activeModel.provider} · ${activeModel.model}` : 'Geen model geladen'}</dd>
           <dt>Status</dt><dd>{scan?.status ?? 'idle'}</dd>
         </dl>
-        <button className="primary" onClick={startScan}><Play size={17} /> Start scan</button>
+        <div className="scan-control-row inline">
+          <button className="primary" onClick={startScan}><Play size={17} /> Start</button>
+          <button className="secondary" onClick={pauseScan} disabled={!canPause}><Pause size={17} /> Pauze</button>
+          <button className="danger" onClick={stopScan} disabled={!canStop}><Square size={16} /> Stop</button>
+        </div>
       </div>
     </section>
   )
@@ -786,17 +863,23 @@ function buildMindmap(documents: DocumentItem[], website: Website | null) {
 }
 
 function uniqueDocuments(documents: DocumentItem[]) {
-  const byUrl = new Map<string, DocumentItem>()
+  const byKey = new Map<string, DocumentItem>()
   for (const document of documents) {
-    const key = canonicalFrontendUrl(document.source_url)
-    if (!byUrl.has(key)) byUrl.set(key, document)
+    const key = document.text_hash ? `hash:${document.text_hash}` : `url:${canonicalFrontendUrl(document.source_url)}`
+    const existing = byKey.get(key)
+    if (!existing || (existing.vector_status === 'duplicate' && document.vector_status !== 'duplicate')) {
+      byKey.set(key, document)
+    }
   }
-  return Array.from(byUrl.values())
+  return Array.from(byKey.values())
 }
 
-function canonicalFrontendUrl(value: string) {
+function canonicalFrontendUrl(value: string): string {
   try {
     const parsed = new URL(value)
+    if (parsed.protocol === 'mailto:') {
+      return canonicalMailtoBacklink(value)
+    }
     parsed.hash = ''
     parsed.hostname = parsed.hostname.replace(/^www\./, '').toLowerCase()
     if (parsed.pathname === '/') parsed.pathname = ''
@@ -804,6 +887,12 @@ function canonicalFrontendUrl(value: string) {
   } catch {
     return value
   }
+}
+
+function canonicalMailtoBacklink(value: string): string {
+  const match = value.match(/^mailto:[^@/]+@([^/?#]+)(\/[^?#]*)/i)
+  if (!match) return value
+  return canonicalFrontendUrl(`https://${match[1]}${match[2]}`)
 }
 
 function compactTitle(value: string, max = 52) {

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.models.entities import ScanJob, Website
+from app.models.entities import ContentChunk, Document, ScanJob, Website
 from app.services.crawler import CompanyCrawler
 from app.services import crawler as crawler_module
 from app.api.routes import _scan_duration_seconds
@@ -32,6 +32,13 @@ def test_canonical_url_ignores_www_and_fragments() -> None:
 
     assert crawler._canonical_url("HTTPS://www.darbouwadvies.nl/#content") == "https://darbouwadvies.nl"
     assert crawler._canonical_url("https://www.darbouwadvies.nl/contact/#top") == "https://darbouwadvies.nl/contact/"
+
+
+def test_canonical_url_does_not_convert_mailto_to_https_url() -> None:
+    crawler = object.__new__(CompanyCrawler)
+
+    assert crawler._canonical_url("mailto:thijmen@darbouwadvies.nl/over-ons/algemene-informatie/") == "mailto:thijmen@darbouwadvies.nl/over-ons/algemene-informatie/"
+    assert not crawler._is_crawlable_url("mailto:thijmen@darbouwadvies.nl/over-ons/algemene-informatie/")
 
 
 def test_detect_logo_url_prefers_declared_icons() -> None:
@@ -73,6 +80,28 @@ def make_scan_session() -> tuple[Session, Website, ScanJob]:
     return db, website, scan
 
 
+def make_graph_session() -> tuple[Session, Website, ScanJob, Document, ContentChunk]:
+    engine = create_engine("sqlite:///:memory:")
+    Website.__table__.create(bind=engine)
+    ScanJob.__table__.create(bind=engine)
+    Document.__table__.create(bind=engine)
+    ContentChunk.__table__.create(bind=engine)
+    db = Session(engine)
+    website = Website(url="https://example.com", company_name="Example")
+    db.add(website)
+    db.commit()
+    scan = ScanJob(website_id=website.id)
+    db.add(scan)
+    db.commit()
+    document = Document(website_id=website.id, scan_id=scan.id, source_url="https://example.com")
+    db.add(document)
+    db.commit()
+    chunk = ContentChunk(document_id=document.id, chunk_index=0, text="hello", embedding="[]")
+    db.add(chunk)
+    db.commit()
+    return db, website, scan, document, chunk
+
+
 @pytest.mark.asyncio
 async def test_crawl_queue_deduplicates_links_and_stops_cycles(monkeypatch) -> None:
     db, website, scan = make_scan_session()
@@ -89,6 +118,7 @@ async def test_crawl_queue_deduplicates_links_and_stops_cycles(monkeypatch) -> N
                 "https://example.com/about#team",
                 "https://www.example.com/about#other",
                 "https://example.com/contact",
+                "mailto:info@example.com/contact",
             ]
         elif url == "https://example.com/about":
             links = ["https://example.com", "https://example.com/contact#form"]
@@ -145,3 +175,15 @@ def test_scan_duration_uses_completed_at_when_available() -> None:
 def test_crawl_setting_validation_rejects_zero() -> None:
     with pytest.raises(ValueError):
         ProviderSettingsUpdate(scan_max_items=0)
+
+
+def test_reset_deletes_documents_scans_and_graph_chunks() -> None:
+    from app.api.routes import reset_website
+
+    db, website, _scan, _document, _chunk = make_graph_session()
+
+    assert reset_website(website.id, db) == {"status": "reset"}
+    assert db.query(ContentChunk).count() == 0
+    assert db.query(Document).count() == 0
+    assert db.query(ScanJob).count() == 0
+    assert db.query(Website).count() == 1

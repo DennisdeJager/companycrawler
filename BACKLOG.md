@@ -2,6 +2,8 @@
 
 ## Done
 
+- [x] Dashboard scanbediening voor starten, pauzeren en stoppen toegevoegd; reset verwijdert website crawl-data inclusief graph chunks.
+
 - [x] Knowledge Graph mindmap, crawler deduplicatie, scanstatistieken en instelbare parallelle crawlverwerking toegevoegd.
 - [x] Bedrijfslogo-detectie, Smawa huisstijl-logo, dark theme en hiërarchische dashboard tree toegevoegd.
 - [x] Vector-deduplicatie op content-hash, meerlagige mindmap, sticky inspector en rijkere scanvisuals toegevoegd.

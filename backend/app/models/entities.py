@@ -17,6 +17,8 @@ class UserRole(str, Enum):
 class ScanStatus(str, Enum):
     queued = "queued"
     running = "running"
+    paused = "paused"
+    stopped = "stopped"
     completed = "completed"
     failed = "failed"
 

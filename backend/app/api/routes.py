@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import ContentChunk, Document, ModelConfig, ScanJob, User, Website
-from app.models.entities import UserRole
+from app.models.entities import ScanStatus, UserRole
 from app.schemas.dto import (
     DocumentDetail,
     DocumentRead,
@@ -298,6 +298,9 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
     website = db.get(Website, website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
+    document_ids = [row[0] for row in db.query(Document.id).filter(Document.website_id == website_id).all()]
+    if document_ids:
+        db.query(ContentChunk).filter(ContentChunk.document_id.in_(document_ids)).delete(synchronize_session=False)
     db.query(Document).filter(Document.website_id == website_id).delete()
     db.query(ScanJob).filter(ScanJob.website_id == website_id).delete()
     db.commit()
@@ -326,6 +329,46 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
+    return serialize_scan(db, scan)
+
+
+@router.post("/scans/{scan_id}/pause", response_model=ScanRead)
+def pause_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+    scan = db.get(ScanJob, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status in {ScanStatus.queued, ScanStatus.running}:
+        scan.status = ScanStatus.paused
+        scan.message = "Scan gepauzeerd"
+        db.commit()
+        db.refresh(scan)
+    return serialize_scan(db, scan)
+
+
+@router.post("/scans/{scan_id}/resume", response_model=ScanRead)
+def resume_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+    scan = db.get(ScanJob, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status == ScanStatus.paused:
+        scan.status = ScanStatus.running if scan.started_at else ScanStatus.queued
+        scan.message = "Scan hervat"
+        db.commit()
+        db.refresh(scan)
+    return serialize_scan(db, scan)
+
+
+@router.post("/scans/{scan_id}/stop", response_model=ScanRead)
+def stop_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+    scan = db.get(ScanJob, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    if scan.status in {ScanStatus.queued, ScanStatus.running, ScanStatus.paused}:
+        scan.status = ScanStatus.stopped
+        scan.message = "Scan gestopt"
+        scan.completed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(scan)
     return serialize_scan(db, scan)
 
 

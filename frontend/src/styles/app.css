@@ -80,7 +80,7 @@ nav button.active, nav button:hover {
 
 .workspace {
   padding: 24px;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
 }
 .workspace::before {
@@ -251,6 +251,10 @@ button.primary, button.secondary, button.danger, .icon-button, .row-actions butt
 button.primary { background: #0f8b8d; color: white; font-weight: 800; padding: 0 14px; }
 button.secondary { background: #eef4f7; color: #24313a; border-color: #dfe6ec; padding: 0 12px; }
 button.danger { background: #fff2f2; color: #b83232; border-color: #f3c9c9; padding: 0 12px; }
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
 .google-login-button { background: #0f8b8d; color: white; font-weight: 800; padding: 0 14px; text-decoration: none; margin: 18px auto 0; width: min(280px, 100%); }
 .icon-button, .row-actions button { background: #eef4f7; border-color: #dfe6ec; color: #0f6f71; width: 42px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
@@ -305,6 +309,16 @@ button.danger { background: #fff2f2; color: #b83232; border-color: #f3c9c9; padd
 dl { display: grid; grid-template-columns: 132px 1fr; gap: 8px; font-size: 13px; }
 dt { color: #66727f; }
 dd { margin: 0; color: #172026; word-break: break-word; }
+.scan-control-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.scan-control-row.inline {
+  display: flex;
+  flex-wrap: wrap;
+}
 
 .tree { display: grid; gap: 5px; max-height: 620px; overflow: auto; }
 .tree-item {
@@ -371,7 +385,7 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
 .knowledge-layout > .inspector-panel {
   position: sticky;
   top: 18px;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - 36px);
   overflow: auto;
 }
 .full-text-block {
@@ -392,8 +406,8 @@ small { color: #66727f; font-size: 12px; line-height: 1.35; }
   font-size: 13px;
   line-height: 1.55;
   margin: 0;
-  max-height: 360px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding: 10px;
   white-space: pre-wrap;
 }

@@ -78,6 +78,12 @@ class CompanyCrawler:
 
         try:
             await self._crawl_website(website, scan)
+            self.db.refresh(scan)
+            if scan.status == ScanStatus.stopped:
+                scan.message = "Scan gestopt"
+                scan.completed_at = scan.completed_at or datetime.utcnow()
+                self.db.commit()
+                return
             scan.status = ScanStatus.completed
             scan.progress = 100
             if not scan.error:
@@ -104,6 +110,8 @@ class CompanyCrawler:
 
         async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
             while (queue or in_flight) and len(seen) < self.settings.scan_max_items:
+                if await self._wait_if_paused_or_stopped(scan, in_flight):
+                    return
                 while queue and len(in_flight) < max_parallel and len(seen) + len(in_flight) < self.settings.scan_max_items:
                     current, depth = queue.pop(0)
                     if current in seen or depth > self.settings.scan_max_depth:
@@ -121,6 +129,8 @@ class CompanyCrawler:
                     continue
 
                 done, in_flight = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
+                if await self._wait_if_paused_or_stopped(scan, in_flight):
+                    return
                 for task in done:
                     result = task.result()
                     final_url = self._canonical_url(result.final_url)
@@ -134,6 +144,8 @@ class CompanyCrawler:
                         continue
 
                     for link in result.links:
+                        if not self._is_crawlable_url(link):
+                            continue
                         normalized = self._canonical_url(link)
                         parsed = urlparse(normalized)
                         if parsed.scheme not in {"http", "https"}:
@@ -153,6 +165,36 @@ class CompanyCrawler:
             scan.error = "\n".join(failed_urls[:10])
             scan.message = f"Scan afgerond met {len(failed_urls)} overgeslagen URL(s)"
             self.db.commit()
+
+    async def _wait_if_paused_or_stopped(self, scan: ScanJob, in_flight: set[asyncio.Task[ProcessedContent]]) -> bool:
+        self.db.refresh(scan)
+        if scan.status == ScanStatus.stopped:
+            for task in in_flight:
+                task.cancel()
+            if in_flight:
+                await asyncio.gather(*in_flight, return_exceptions=True)
+                in_flight.clear()
+            scan.message = "Scan gestopt"
+            scan.completed_at = scan.completed_at or datetime.utcnow()
+            self.db.commit()
+            return True
+
+        while scan.status == ScanStatus.paused:
+            scan.message = "Scan gepauzeerd"
+            self.db.commit()
+            await asyncio.sleep(1)
+            self.db.refresh(scan)
+            if scan.status == ScanStatus.stopped:
+                for task in in_flight:
+                    task.cancel()
+                if in_flight:
+                    await asyncio.gather(*in_flight, return_exceptions=True)
+                    in_flight.clear()
+                scan.message = "Scan gestopt"
+                scan.completed_at = scan.completed_at or datetime.utcnow()
+                self.db.commit()
+                return True
+        return False
 
     async def _process_url(self, semaphore: asyncio.Semaphore, client: httpx.AsyncClient, website_id: int, scan_id: int, url: str, depth: int) -> ProcessedContent:
         db = SessionLocal()
@@ -187,7 +229,11 @@ class CompanyCrawler:
             title = soup.title.string.strip() if soup.title and soup.title.string else parsed.netloc
             for item in soup(["script", "style", "noscript", "svg"]):
                 item.decompose()
-            links = [urljoin(str(response.url), anchor.get("href")) for anchor in soup.find_all("a", href=True)]
+            links = [
+                urljoin(str(response.url), anchor.get("href"))
+                for anchor in soup.find_all("a", href=True)
+                if self._is_crawlable_url(anchor.get("href"))
+            ]
             text = soup.get_text(" ", strip=True)
             return FetchedContent(str(response.url), title, content_type or "text/html", text, links)
 
@@ -311,6 +357,9 @@ class CompanyCrawler:
 
     def _normalize_url(self, url: str) -> str:
         clean, _fragment = urldefrag(str(url))
+        parsed_input = urlsplit(clean)
+        if parsed_input.scheme and parsed_input.scheme.lower() not in {"http", "https"}:
+            return clean
         if not clean.startswith(("http://", "https://")):
             clean = "https://" + clean
         parsed = urlsplit(clean)
@@ -325,6 +374,12 @@ class CompanyCrawler:
         if netloc.startswith("www."):
             netloc = netloc[4:]
         return urlunsplit((scheme, netloc, parsed.path, parsed.query, ""))
+
+    def _is_crawlable_url(self, url: str | None) -> bool:
+        if not url:
+            return False
+        parsed = urlsplit(str(url).strip())
+        return not parsed.scheme or parsed.scheme.lower() in {"http", "https"}
 
     def _canonical_host(self, url: str) -> str:
         host = urlparse(url).hostname or ""

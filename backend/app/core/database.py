@@ -39,6 +39,8 @@ def init_db() -> None:
 def _upgrade_schema() -> None:
     if engine.dialect.name == "postgresql":
         with engine.begin() as connection:
+            connection.execute(text("ALTER TYPE scanstatus ADD VALUE IF NOT EXISTS 'paused'"))
+            connection.execute(text("ALTER TYPE scanstatus ADD VALUE IF NOT EXISTS 'stopped'"))
             connection.execute(text("ALTER TABLE websites ADD COLUMN IF NOT EXISTS logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
             connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_hash VARCHAR(64) NOT NULL DEFAULT ''"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_documents_text_hash ON documents (text_hash)"))
