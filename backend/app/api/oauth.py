@@ -33,7 +33,9 @@ class ClientRegistrationRequest(BaseModel):
 
 
 def _issuer(request: Request) -> str:
-    return str(request.base_url).rstrip("/")
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto.split(',')[0].strip()}://{host.split(',')[0].strip()}".rstrip("/")
 
 
 def _mcp_resource(request: Request) -> str:

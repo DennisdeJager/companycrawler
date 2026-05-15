@@ -57,6 +57,23 @@ def test_oauth_metadata_and_mcp_401_advertise_resource_metadata() -> None:
     assert "resource_metadata=" in unauthorized.headers["www-authenticate"]
 
 
+def test_oauth_metadata_uses_forwarded_https_origin() -> None:
+    client, _ = _client()
+
+    metadata = client.get(
+        "/.well-known/oauth-authorization-server",
+        headers={"host": "companycrawler.smawa.nl", "x-forwarded-proto": "https", "x-forwarded-host": "companycrawler.smawa.nl"},
+    )
+    challenge = client.get(
+        "/mcp",
+        headers={"host": "companycrawler.smawa.nl", "x-forwarded-proto": "https", "x-forwarded-host": "companycrawler.smawa.nl"},
+    )
+
+    assert metadata.json()["issuer"] == "https://companycrawler.smawa.nl"
+    assert metadata.json()["registration_endpoint"] == "https://companycrawler.smawa.nl/oauth/register"
+    assert 'resource_metadata="https://companycrawler.smawa.nl/.well-known/oauth-protected-resource/mcp"' in challenge.headers["www-authenticate"]
+
+
 def test_dynamic_registration_authorize_and_token_exchange_enable_mcp_access() -> None:
     client, db = _client()
     user = _user(db)

@@ -258,8 +258,11 @@ def require_mcp_principal(
     db: Session = Depends(get_db),
 ) -> ApiPrincipal:
     raw_token = _bearer_token(authorization)
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    public_base_url = f"{proto.split(',')[0].strip()}://{host.split(',')[0].strip()}".rstrip("/")
     if not raw_token:
-        resource_metadata_url = str(request.base_url).rstrip("/") + "/.well-known/oauth-protected-resource/mcp"
+        resource_metadata_url = f"{public_base_url}/.well-known/oauth-protected-resource/mcp"
         raise HTTPException(
             status_code=401,
             detail="MCP requires a bearer API token",
@@ -267,7 +270,7 @@ def require_mcp_principal(
         )
     principal = _api_token_principal(db, raw_token, request)
     if not principal:
-        resource_metadata_url = str(request.base_url).rstrip("/") + "/.well-known/oauth-protected-resource/mcp"
+        resource_metadata_url = f"{public_base_url}/.well-known/oauth-protected-resource/mcp"
         raise HTTPException(
             status_code=401,
             detail="Invalid API token",
