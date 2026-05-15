@@ -123,6 +123,7 @@ jobs:
             IMAGE_REF="$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           fi
           CALLBACK_IMAGE_DIGEST="${IMAGE_DIGEST:-source-${GITHUB_SHA}}"
+          SHORT_SHA="${GITHUB_SHA::7}"
           REMOTE_RELEASE_DIR="$DEPLOY_APP_DIR/releases/$GITHUB_SHA"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
@@ -160,7 +161,7 @@ jobs:
             COMPOSE_UP_FLAG="--build"
           fi
           scp -i ~/.ssh/deploy_key "$COMPOSE_FILE" "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_RELEASE_DIR/compose.yaml"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_RELEASE_DIR' && IMAGE_REF='$IMAGE_REF' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d $COMPOSE_UP_FLAG"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_RELEASE_DIR' && IMAGE_REF='$IMAGE_REF' VITE_COMMIT_ID='$SHORT_SHA' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d $COMPOSE_UP_FLAG"
           WEB_CONTAINER_IP=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_RELEASE_DIR' && cid=\$(COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' ps -q '${WEB_SERVICE_NAME:-web}' 2>/dev/null || true); if [ -n \"\$cid\" ]; then docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \"\$cid\"; fi" | tr -d '\r\n')
           CADDY_TARGET=""
           if [ -n "${WEB_CONTAINER_IP:-}" ] && [ -n "${WEB_INTERNAL_PORT:-}" ]; then
