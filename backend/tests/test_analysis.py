@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import Base
 from app.api.routes import delete_analysis, delete_analysis_job_result
 from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, Website
+from app.services.ai import AIProviderError, AIService
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts
 
 
@@ -51,6 +52,39 @@ def test_normalize_variables_ignores_unknown_company_name(db_session) -> None:
     )
 
     assert variables == {"Bedrijfsnaam": "Example BV", "Bedrijfsplaats": "onbekend", "Regio": "Noord-Holland"}
+
+
+def test_extract_responses_text_supports_output_content(db_session) -> None:
+    service = AIService(db_session)
+
+    text = service._extract_responses_text(
+        {
+            "output": [
+                {
+                    "content": [
+                        {"type": "output_text", "text": "{\"Bedrijfsnaam\":\"Example\"}"},
+                    ]
+                }
+            ]
+        }
+    )
+
+    assert text == '{"Bedrijfsnaam":"Example"}'
+
+
+@pytest.mark.asyncio
+async def test_complete_raises_when_configured_provider_fails(db_session, monkeypatch) -> None:
+    service = AIService(db_session)
+    service.last_provider_error = "OpenAI responses faalde met HTTP 401: invalid api key"
+
+    async def empty_provider(_provider: str, _model: str, _prompt: str, max_tokens: int) -> str:
+        return ""
+
+    monkeypatch.setattr(service, "_provider_has_key", lambda _provider: True)
+    monkeypatch.setattr(service, "_chat_provider", empty_provider)
+
+    with pytest.raises(AIProviderError, match="invalid api key"):
+        await service.complete("test")
 
 
 @pytest.mark.asyncio

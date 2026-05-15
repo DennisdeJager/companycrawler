@@ -3,6 +3,7 @@ import json
 import math
 import re
 from collections import Counter
+from typing import Any
 
 import httpx
 from sqlalchemy.orm import Session
@@ -11,10 +12,15 @@ from app.core.config import get_settings
 from app.services.settings_store import get_setting
 
 
+class AIProviderError(RuntimeError):
+    pass
+
+
 class AIService:
     def __init__(self, db: Session | None = None) -> None:
         self.settings = get_settings()
         self.db = db
+        self.last_provider_error = ""
 
     @property
     def openai_api_key(self) -> str:
@@ -79,6 +85,7 @@ class AIService:
             result = await self._chat_provider(self.agent_provider, self.agent_model, prompt, max_tokens=max_tokens)
             if result:
                 return result
+            raise AIProviderError(self.last_provider_error or f"{self.agent_provider} gaf geen bruikbare respons.")
         return self._fallback_completion(prompt)
 
     async def embed(self, text: str) -> list[float]:
@@ -181,6 +188,10 @@ class AIService:
         return await self._chat_openai(model, prompt, max_tokens)
 
     async def _chat_openai(self, model: str, prompt: str, max_tokens: int) -> str:
+        self.last_provider_error = ""
+        response_text = await self._responses_openai(model, prompt, max_tokens)
+        if response_text:
+            return response_text
         try:
             async with httpx.AsyncClient(timeout=45) as client:
                 response = await client.post(
@@ -195,10 +206,34 @@ class AIService:
                 )
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"].strip()
+        except httpx.HTTPStatusError as exc:
+            self.last_provider_error = self._provider_error("OpenAI chat completions", exc.response)
         except Exception:
-            return ""
+            self.last_provider_error = "OpenAI chat completions gaf geen bruikbare respons."
+        return ""
+
+    async def _responses_openai(self, model: str, prompt: str, max_tokens: int) -> str:
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={"Authorization": f"Bearer {self.openai_api_key}"},
+                    json={
+                        "model": model,
+                        "input": prompt,
+                        "max_output_tokens": max_tokens,
+                    },
+                )
+                response.raise_for_status()
+                return self._extract_responses_text(response.json())
+        except httpx.HTTPStatusError as exc:
+            self.last_provider_error = self._provider_error("OpenAI responses", exc.response)
+        except Exception:
+            self.last_provider_error = "OpenAI responses gaf geen bruikbare respons."
+        return ""
 
     async def _chat_openrouter(self, model: str, prompt: str, max_tokens: int) -> str:
+        self.last_provider_error = ""
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 response = await client.post(
@@ -217,8 +252,11 @@ class AIService:
                 )
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"].strip()
+        except httpx.HTTPStatusError as exc:
+            self.last_provider_error = self._provider_error("OpenRouter chat completions", exc.response)
         except Exception:
-            return ""
+            self.last_provider_error = "OpenRouter chat completions gaf geen bruikbare respons."
+        return ""
 
     async def _list_openai_models(self) -> list[dict[str, str]]:
         try:
@@ -308,6 +346,35 @@ class AIService:
             vector[index] += float(count)
         norm = math.sqrt(sum(value * value for value in vector)) or 1.0
         return [round(value / norm, 6) for value in vector]
+
+    def _extract_responses_text(self, payload: dict[str, Any]) -> str:
+        output_text = payload.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+        parts: list[str] = []
+        for item in payload.get("output", []):
+            if not isinstance(item, dict):
+                continue
+            for content in item.get("content", []):
+                if not isinstance(content, dict):
+                    continue
+                text = content.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n".join(parts).strip()
+
+    def _provider_error(self, endpoint: str, response: httpx.Response) -> str:
+        detail = ""
+        try:
+            payload = response.json()
+            error = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(error, dict):
+                detail = str(error.get("message") or error.get("code") or "")
+        except Exception:
+            detail = response.text[:220]
+        detail = re.sub(r"sk-[A-Za-z0-9_\-]+", "[redacted]", detail or "")
+        suffix = f": {detail[:260]}" if detail else ""
+        return f"{endpoint} faalde met HTTP {response.status_code}{suffix}"
 
     def _fallback_completion(self, prompt: str) -> str:
         if "Wat is de naam, de woonplaats en regio van dit bedrijf" in prompt:
