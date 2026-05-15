@@ -128,6 +128,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_APP_DIR'"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "sudo -n chown -R '$DEPLOY_USER:$DEPLOY_USER' '$DEPLOY_APP_DIR'"
           printf '%s\n' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           LOCAL_SOURCE_ARCHIVE="/tmp/capps-source-${GITHUB_RUN_ID}.tar.gz"
           REMOTE_SOURCE_ARCHIVE="/tmp/capps-source-${GITHUB_RUN_ID}.tar.gz"
