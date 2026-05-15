@@ -6,12 +6,16 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 class WebsiteCreate(BaseModel):
     url: HttpUrl
     company_name: str = Field(min_length=1, max_length=255)
+    company_place: str = Field(default="", max_length=255)
+    region: str = Field(default="", max_length=255)
     logo_url: str = Field(default="", max_length=2048)
 
 
 class WebsiteUpdate(BaseModel):
     url: HttpUrl | None = None
     company_name: str | None = Field(default=None, min_length=1, max_length=255)
+    company_place: str | None = Field(default=None, max_length=255)
+    region: str | None = Field(default=None, max_length=255)
     logo_url: str | None = Field(default=None, max_length=2048)
 
 
@@ -21,6 +25,8 @@ class WebsiteRead(BaseModel):
     id: int
     url: str
     company_name: str
+    company_place: str
+    region: str
     logo_url: str
     created_at: datetime
     updated_at: datetime
@@ -174,6 +180,8 @@ class GoogleLoginRequest(BaseModel):
 class ProviderSettingsRead(BaseModel):
     openai_configured: bool
     openrouter_configured: bool
+    openai_key_preview: str
+    openrouter_key_preview: str
     google_auth_enabled: bool
     google_client_secret_configured: bool
     google_client_id: str

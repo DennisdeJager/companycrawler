@@ -61,8 +61,13 @@ class CompanyCrawler:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
             response = await client.get(str(url), headers={"User-Agent": "companycrawler/1.0 public marketing crawler"})
             response.raise_for_status()
-            company_name = await self.ai.detect_company_name(str(response.url), response.text)
-            return {"company_name": company_name, "logo_url": self._detect_logo_url(str(response.url), response.text)}
+            profile = await self.ai.detect_company_profile(str(response.url), response.text)
+            return {
+                "company_name": profile["company_name"],
+                "company_place": profile.get("company_place", ""),
+                "region": profile.get("region", ""),
+                "logo_url": self._detect_logo_url(str(response.url), response.text),
+            }
 
     async def run_scan(self, scan_id: int) -> None:
         scan = self.db.get(ScanJob, scan_id)

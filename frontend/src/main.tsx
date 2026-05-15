@@ -42,6 +42,7 @@ import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'Users' | 'Settings'
 type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts'
+type NotificationState = { tone: 'success' | 'error' | 'info'; text: string } | null
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
   { label: 'Dashboard', icon: Activity },
@@ -63,6 +64,8 @@ const supportedEmbeddingModels = new Set(['text-embedding-3-small', 'text-embedd
 const emptySettings: ProviderSettings = {
   openai_configured: false,
   openrouter_configured: false,
+  openai_key_preview: '',
+  openrouter_key_preview: '',
   google_auth_enabled: false,
   google_client_secret_configured: false,
   google_client_id: '',
@@ -99,6 +102,8 @@ function App() {
   const [scan, setScan] = useState<Scan | null>(null)
   const [formUrl, setFormUrl] = useState('https://example.com')
   const [formCompany, setFormCompany] = useState('Example')
+  const [formPlace, setFormPlace] = useState('')
+  const [formRegion, setFormRegion] = useState('')
   const [formLogoUrl, setFormLogoUrl] = useState('')
   const [editWebsiteId, setEditWebsiteId] = useState<number | null>(null)
   const [websiteDialogMode, setWebsiteDialogMode] = useState<'create' | 'edit' | null>(null)
@@ -109,6 +114,7 @@ function App() {
   const [userFormRole, setUserFormRole] = useState('user')
   const [userFormActive, setUserFormActive] = useState(true)
   const [message, setMessage] = useState('Klaar om een website te scannen.')
+  const [notification, setNotification] = useState<NotificationState>(null)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('companycrawler-theme') === 'dark' ? 'dark' : 'light')
 
   const activeModel = useMemo(() => models.find((model) => model.purpose === 'summary') ?? models[0], [models])
@@ -130,6 +136,22 @@ function App() {
     const value = localStorage.getItem(selectedWebsiteStorageKey(activeUser))
     const id = value ? Number(value) : 0
     return Number.isFinite(id) && id > 0 ? id : null
+  }
+
+  function notify(tone: NonNullable<NotificationState>['tone'], text: string) {
+    setMessage(text)
+    setNotification({ tone, text })
+  }
+
+  function errorText(error: unknown) {
+    const raw = error instanceof Error ? error.message : String(error)
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed.detail) return typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail)
+    } catch {
+      // Plain text errors are displayed as-is.
+    }
+    return raw.replace(/^Error:\s*/, '')
   }
 
   async function load(activeUser: User | null = user) {
@@ -164,6 +186,8 @@ function App() {
     }
     setFormUrl(website.url)
     setFormCompany(website.company_name)
+    setFormPlace(website.company_place ?? '')
+    setFormRegion(website.region ?? '')
     setFormLogoUrl(website.logo_url ?? '')
     const docRows = await api.documents(website.id)
     setDocuments(docRows)
@@ -171,7 +195,7 @@ function App() {
     const analysisRows = await api.analyses(website.id).catch(() => [])
     setAnalyses(analysisRows)
     setActiveAnalysis(analysisRows[0] ?? null)
-    if (announce) setMessage(`${website.company_name} is actief geselecteerd.`)
+    if (announce) notify('success', `${website.company_name} is actief geselecteerd.`)
   }
 
   useEffect(() => {
@@ -179,7 +203,7 @@ function App() {
       .then(async (providerSettings) => {
         setSettings(providerSettings)
         if (!providerSettings.google_auth_enabled) {
-          setMessage('Google login is nog niet geconfigureerd.')
+          notify('info', 'Google login is nog niet geconfigureerd.')
           return undefined
         }
         const loggedIn = await api.session().catch(() => null)
@@ -190,8 +214,14 @@ function App() {
         }
         return undefined
       })
-      .catch((error) => setMessage(error.message))
+      .catch((error) => notify('error', errorText(error)))
   }, [])
+
+  useEffect(() => {
+    if (!notification) return undefined
+    const timer = window.setTimeout(() => setNotification(null), 30000)
+    return () => window.clearTimeout(timer)
+  }, [notification])
 
   useEffect(() => {
     if (!scan || ['completed', 'failed', 'stopped'].includes(scan.status)) return
@@ -203,8 +233,8 @@ function App() {
         setDocuments(docRows)
         setSelectedDocument((current) => current ?? docRows[0] ?? null)
       }
-      if (fresh.status === 'completed') setMessage('Scan afgerond. De website tree is bijgewerkt.')
-      if (fresh.status === 'failed') setMessage(`Scan mislukt: ${fresh.error || fresh.message}`)
+      if (fresh.status === 'completed') notify('success', 'Scan afgerond. De website tree is bijgewerkt.')
+      if (fresh.status === 'failed') notify('error', `Scan mislukt: ${fresh.error || fresh.message}`)
     }, 1200)
     return () => window.clearInterval(timer)
   }, [scan, selectedWebsite])
@@ -215,51 +245,67 @@ function App() {
       const fresh = await api.analysis(activeAnalysis.id)
       setActiveAnalysis(fresh)
       setAnalyses((rows) => rows.map((analysis) => (analysis.id === fresh.id ? fresh : analysis)))
-      if (fresh.status === 'completed') setMessage('Analyse afgerond.')
-      if (fresh.status === 'failed') setMessage(`Analyse mislukt: ${fresh.error}`)
+      if (fresh.status === 'completed') notify('success', 'Analyse afgerond.')
+      if (fresh.status === 'failed') notify('error', `Analyse mislukt: ${fresh.error}`)
     }, 1200)
     return () => window.clearInterval(timer)
   }, [activeAnalysis?.id, activeAnalysis?.status])
 
   async function detectName() {
-    setMessage('Bedrijfsnaam detecteren...')
+    notify('info', 'Bedrijfsprofiel detecteren...')
     try {
       const result = await api.detectCompanyName(formUrl)
       setFormCompany(result.company_name)
+      setFormPlace(result.company_place ?? '')
+      setFormRegion(result.region ?? '')
       setFormLogoUrl(result.logo_url ?? '')
-      setMessage('Bedrijfsnaam ingevuld op basis van de homepage.')
+      notify('success', 'Bedrijfsnaam, plaats en regio ingevuld op basis van de homepage.')
     } catch (error) {
-      setMessage(`Detectie mislukt: ${String(error)}`)
+      notify('error', `Detectie mislukt: ${errorText(error)}`)
     }
   }
 
   async function saveWebsite() {
-    if (editWebsiteId) {
-      const updated = await api.updateWebsite(editWebsiteId, { url: formUrl, company_name: formCompany, logo_url: formLogoUrl })
-      setWebsites((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
-      await selectWebsite(updated)
-      setEditWebsiteId(null)
+    try {
+      if (editWebsiteId) {
+        const updated = await api.updateWebsite(editWebsiteId, { url: formUrl, company_name: formCompany, company_place: formPlace, region: formRegion, logo_url: formLogoUrl })
+        setWebsites((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
+        await selectWebsite(updated)
+        setEditWebsiteId(null)
+        setWebsiteDialogMode(null)
+        notify('success', 'Website bijgewerkt.')
+        return updated
+      }
+      const created = await api.createWebsite({ url: formUrl, company_name: formCompany, company_place: formPlace, region: formRegion, logo_url: formLogoUrl })
+      setWebsites((rows) => [created, ...rows])
+      await selectWebsite(created)
       setWebsiteDialogMode(null)
-      setMessage('Website bijgewerkt.')
-      return updated
+      notify('success', 'Website aangemaakt en actief geselecteerd.')
+      return created
+    } catch (error) {
+      notify('error', `Website opslaan mislukt: ${errorText(error)}`)
+      throw error
     }
-    const created = await api.createWebsite(formUrl, formCompany, formLogoUrl)
-    setWebsites((rows) => [created, ...rows])
-    await selectWebsite(created)
-    setWebsiteDialogMode(null)
-    setMessage('Website aangemaakt en actief geselecteerd.')
-    return created
   }
 
   async function startScan() {
     if (scan?.status === 'paused') {
-      const resumed = await api.resumeScan(scan.id)
-      setScan(resumed)
-      setMessage('Scan hervat. Voortgang wordt realtime bijgewerkt.')
-      setView('Dashboard')
+      try {
+        const resumed = await api.resumeScan(scan.id)
+        setScan(resumed)
+        notify('success', 'Scan hervat. Voortgang wordt realtime bijgewerkt.')
+        setView('Dashboard')
+      } catch (error) {
+        notify('error', `Scan hervatten mislukt: ${errorText(error)}`)
+      }
       return
     }
-    const website = selectedWebsite ?? await saveWebsite()
+    let website: Website
+    try {
+      website = selectedWebsite ?? await saveWebsite()
+    } catch {
+      return
+    }
     setScan({
       id: 0,
       website_id: website.id,
@@ -278,31 +324,48 @@ function App() {
       scan_max_parallel_items: settings.scan_max_parallel_items
     })
     setView('Dashboard')
-    const created = await api.startScan(website.id)
-    setScan(created)
-    setMessage('Scan gestart. Voortgang wordt realtime bijgewerkt.')
+    try {
+      const created = await api.startScan(website.id)
+      setScan(created)
+      notify('success', 'Scan gestart. Voortgang wordt realtime bijgewerkt.')
+    } catch (error) {
+      setScan(null)
+      notify('error', `Scan starten mislukt: ${errorText(error)}`)
+    }
   }
 
   async function pauseScan() {
     if (!scan || !['queued', 'running'].includes(scan.status)) return
-    const paused = await api.pauseScan(scan.id)
-    setScan(paused)
-    setMessage('Scan gepauzeerd.')
+    try {
+      const paused = await api.pauseScan(scan.id)
+      setScan(paused)
+      notify('success', 'Scan gepauzeerd.')
+    } catch (error) {
+      notify('error', `Scan pauzeren mislukt: ${errorText(error)}`)
+    }
   }
 
   async function stopScan() {
     if (!scan || !['queued', 'running', 'paused'].includes(scan.status)) return
-    const stopped = await api.stopScan(scan.id)
-    setScan(stopped)
-    setMessage('Scan gestopt.')
+    try {
+      const stopped = await api.stopScan(scan.id)
+      setScan(stopped)
+      notify('success', 'Scan gestopt.')
+    } catch (error) {
+      notify('error', `Scan stoppen mislukt: ${errorText(error)}`)
+    }
   }
 
   async function deleteWebsite(website: Website) {
-    await api.deleteWebsite(website.id)
-    const rows = websites.filter((item) => item.id !== website.id)
-    setWebsites(rows)
-    await selectWebsite(rows[0] ?? null)
-    setMessage('Website verwijderd.')
+    try {
+      await api.deleteWebsite(website.id)
+      const rows = websites.filter((item) => item.id !== website.id)
+      setWebsites(rows)
+      await selectWebsite(rows[0] ?? null)
+      notify('success', 'Website verwijderd.')
+    } catch (error) {
+      notify('error', `Website verwijderen mislukt: ${errorText(error)}`)
+    }
   }
 
   async function resetSelected() {
@@ -312,21 +375,27 @@ function App() {
 
   async function resetWebsiteData(website: Website) {
     if (!window.confirm(`Alle scan- en analysedata van ${website.company_name} verwijderen? De website zelf blijft bestaan.`)) return
-    await api.resetWebsite(website.id)
-    if (selectedWebsite?.id === website.id) {
-      setDocuments([])
-      setSelectedDocument(null)
-      setAnalyses([])
-      setActiveAnalysis(null)
-      setScan(null)
+    try {
+      await api.resetWebsite(website.id)
+      if (selectedWebsite?.id === website.id) {
+        setDocuments([])
+        setSelectedDocument(null)
+        setAnalyses([])
+        setActiveAnalysis(null)
+        setScan(null)
+      }
+      notify('success', 'Alle scan- en analysedata voor deze website is verwijderd.')
+    } catch (error) {
+      notify('error', `Reset mislukt: ${errorText(error)}`)
     }
-    setMessage('Alle scan- en analysedata voor deze website is verwijderd.')
   }
 
   function openNewWebsiteDialog() {
     setEditWebsiteId(null)
     setFormUrl('https://example.com')
     setFormCompany('Example')
+    setFormPlace('')
+    setFormRegion('')
     setFormLogoUrl('')
     setWebsiteDialogMode('create')
   }
@@ -335,6 +404,8 @@ function App() {
     setEditWebsiteId(website.id)
     setFormUrl(website.url)
     setFormCompany(website.company_name)
+    setFormPlace(website.company_place ?? '')
+    setFormRegion(website.region ?? '')
     setFormLogoUrl(website.logo_url ?? '')
     setWebsiteDialogMode('edit')
   }
@@ -345,6 +416,8 @@ function App() {
     if (selectedWebsite) {
       setFormUrl(selectedWebsite.url)
       setFormCompany(selectedWebsite.company_name)
+      setFormPlace(selectedWebsite.company_place ?? '')
+      setFormRegion(selectedWebsite.region ?? '')
       setFormLogoUrl(selectedWebsite.logo_url ?? '')
     }
   }
@@ -374,64 +447,90 @@ function App() {
 
   async function saveUser() {
     const payload = { email: userFormEmail, name: userFormName, role: userFormRole, is_active: userFormActive }
-    if (editUserId) {
-      const updated = await api.updateUser(editUserId, payload)
-      setUsers((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
+    try {
+      if (editUserId) {
+        const updated = await api.updateUser(editUserId, payload)
+        setUsers((rows) => rows.map((item) => (item.id === updated.id ? updated : item)))
+        closeUserDialog()
+        notify('success', 'User bijgewerkt.')
+        return
+      }
+      const created = await api.createUser(payload)
+      setUsers((rows) => [...rows, created])
       closeUserDialog()
-      setMessage('User bijgewerkt.')
-      return
+      notify('success', 'User aangemaakt.')
+    } catch (error) {
+      notify('error', `User opslaan mislukt: ${errorText(error)}`)
     }
-    const created = await api.createUser(payload)
-    setUsers((rows) => [...rows, created])
-    closeUserDialog()
-    setMessage('User aangemaakt.')
   }
 
   async function deleteUser(item: User) {
     if (!window.confirm(`${item.email} verwijderen?`)) return
-    await api.deleteUser(item.id)
-    setUsers((rows) => rows.filter((userItem) => userItem.id !== item.id))
-    setMessage('User verwijderd.')
+    try {
+      await api.deleteUser(item.id)
+      setUsers((rows) => rows.filter((userItem) => userItem.id !== item.id))
+      notify('success', 'User verwijderd.')
+    } catch (error) {
+      notify('error', `User verwijderen mislukt: ${errorText(error)}`)
+    }
   }
 
   async function startAnalysis() {
     if (!selectedWebsite) return
-    setMessage('Analyse-agent jobs worden uitgevoerd...')
+    notify('info', 'Analyse-agent jobs worden uitgevoerd...')
     setView('Analyse')
-    const created = await api.startAnalysis(selectedWebsite.id)
-    setActiveAnalysis(created)
-    const rows = await api.analyses(selectedWebsite.id)
-    setAnalyses(rows)
-    setMessage(created.status === 'completed' ? 'Analyse afgerond.' : `Analyse ${created.status}.`)
+    try {
+      const created = await api.startAnalysis(selectedWebsite.id)
+      setActiveAnalysis(created)
+      const rows = await api.analyses(selectedWebsite.id)
+      setAnalyses(rows)
+      notify(created.status === 'completed' ? 'success' : 'info', created.status === 'completed' ? 'Analyse afgerond.' : `Analyse ${created.status}.`)
+    } catch (error) {
+      notify('error', `Analyse starten mislukt: ${errorText(error)}`)
+    }
   }
 
   async function saveAnalysisPrompt(promptId: string, promptText: string) {
-    const saved = await api.saveAnalysisPrompt(promptId, promptText)
-    setAnalysisPrompts((rows) => rows.map((item) => (item.prompt_id === saved.prompt_id ? saved : item)))
-    setMessage('Analyseprompt opgeslagen.')
+    try {
+      const saved = await api.saveAnalysisPrompt(promptId, promptText)
+      setAnalysisPrompts((rows) => rows.map((item) => (item.prompt_id === saved.prompt_id ? saved : item)))
+      notify('success', 'Analyseprompt opgeslagen.')
+    } catch (error) {
+      notify('error', `Analyseprompt opslaan mislukt: ${errorText(error)}`)
+    }
   }
 
   async function deleteAnalysisJobResult(jobResultId: number) {
     const analysisId = activeAnalysis?.id
     if (!analysisId || !activeAnalysis.jobs.some((job) => job.id === jobResultId) || !window.confirm('Dit jobresultaat verwijderen?')) return
-    await api.deleteAnalysisJobResult(jobResultId)
+    try {
+      await api.deleteAnalysisJobResult(jobResultId)
+    } catch (error) {
+      notify('error', `Jobresultaat verwijderen mislukt: ${errorText(error)}`)
+      return
+    }
     const updateRun = (analysis: AnalysisRun): AnalysisRun => ({
       ...analysis,
       jobs: analysis.jobs.filter((job) => job.id !== jobResultId)
     })
     setAnalyses((rows) => rows.map((analysis) => (analysis.id === analysisId ? updateRun(analysis) : analysis)))
     setActiveAnalysis((analysis) => (analysis && analysis.id === analysisId ? updateRun(analysis) : analysis))
-    setMessage('Jobresultaat verwijderd.')
+    notify('success', 'Jobresultaat verwijderd.')
   }
 
   async function deleteAnalysis(analysisId: number) {
     const analysis = analyses.find((item) => item.id === analysisId)
     if (!analysis || ['queued', 'running'].includes(analysis.status) || !window.confirm(`Analyse #${analysis.id} en alle jobs/resultaten verwijderen?`)) return
-    await api.deleteAnalysis(analysisId)
+    try {
+      await api.deleteAnalysis(analysisId)
+    } catch (error) {
+      notify('error', `Analyse verwijderen mislukt: ${errorText(error)}`)
+      return
+    }
     const remaining = analyses.filter((item) => item.id !== analysisId)
     setAnalyses(remaining)
     setActiveAnalysis((current) => (current?.id === analysisId ? (remaining[0] ?? null) : current))
-    setMessage('Analyse en alle jobresultaten verwijderd.')
+    notify('success', 'Analyse en alle jobresultaten verwijderd.')
   }
 
   function toggleTheme() {
@@ -504,6 +603,7 @@ function App() {
           </div>
         </header>
 
+        {notification && <NotificationBar notification={notification} onClose={() => setNotification(null)} />}
         {settings.warnings.length > 0 && <Warnings warnings={settings.warnings} onSettings={() => setView('Settings')} />}
 
         {view === 'Dashboard' && (
@@ -524,6 +624,8 @@ function App() {
         {view === 'Websites' && (
           <WebsitesView
             company={formCompany}
+            place={formPlace}
+            region={formRegion}
             closeWebsiteDialog={closeWebsiteDialog}
             deleteWebsite={deleteWebsite}
             detectName={detectName}
@@ -535,6 +637,8 @@ function App() {
             openNewWebsiteDialog={openNewWebsiteDialog}
             resetWebsiteData={resetWebsiteData}
             setCompany={setFormCompany}
+            setPlace={setFormPlace}
+            setRegion={setFormRegion}
             setLogoUrl={setFormLogoUrl}
             setUrl={setFormUrl}
             logoUrl={formLogoUrl}
@@ -587,6 +691,7 @@ function App() {
             prompts={analysisPrompts}
             setSettings={setSettings}
             saveAnalysisPrompt={saveAnalysisPrompt}
+            onNotify={notify}
             refresh={load}
           />
         )}
@@ -601,6 +706,17 @@ function Warnings({ warnings, onSettings }: { warnings: string[]; onSettings: ()
       <AlertTriangle size={18} />
       <div>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>
       <button className="secondary" onClick={onSettings}>Open instellingen</button>
+    </section>
+  )
+}
+
+function NotificationBar({ notification, onClose }: { notification: NonNullable<NotificationState>; onClose: () => void }) {
+  const Icon = notification.tone === 'success' ? CheckCircle2 : notification.tone === 'error' ? AlertTriangle : Sparkles
+  return (
+    <section className={`notification-bar ${notification.tone}`} role="status" aria-live="polite">
+      <Icon size={18} />
+      <span>{notification.text}</span>
+      <button className="icon-button" onClick={onClose} title="Melding sluiten" aria-label="Melding sluiten"><X size={16} /></button>
     </section>
   )
 }
@@ -859,6 +975,8 @@ function Inspector({ document, website }: { document: (DocumentItem | DocumentDe
 
 function WebsitesView(props: {
   company: string
+  place: string
+  region: string
   closeWebsiteDialog: () => void
   deleteWebsite: (website: Website) => void
   detectName: () => void
@@ -871,6 +989,8 @@ function WebsitesView(props: {
   selectedWebsite: Website | null
   selectWebsite: (website: Website) => void
   setCompany: (value: string) => void
+  setPlace: (value: string) => void
+  setRegion: (value: string) => void
   setLogoUrl: (value: string) => void
   setUrl: (value: string) => void
   url: string
@@ -892,6 +1012,7 @@ function WebsitesView(props: {
                   <strong>{website.company_name}</strong>
                 </span>
                 <small>{website.url}</small>
+                <small>{[website.company_place, website.region].filter(Boolean).join(' - ') || 'Plaats/regio onbekend'}</small>
               </button>
               <div className="row-actions">
                 <button title="Bewerken" onClick={() => props.openEditWebsiteDialog(website)}><Pencil size={16} /></button>
@@ -917,6 +1038,16 @@ function WebsitesView(props: {
             </div>
             <label>Bedrijfsnaam</label>
             <input value={props.company} onChange={(event) => props.setCompany(event.target.value)} />
+            <div className="form-grid two-equal-columns">
+              <div>
+                <label>Bedrijfsplaats</label>
+                <input value={props.place} onChange={(event) => props.setPlace(event.target.value)} placeholder="Bijvoorbeeld Amsterdam" />
+              </div>
+              <div>
+                <label>Regio</label>
+                <input value={props.region} onChange={(event) => props.setRegion(event.target.value)} placeholder="Bijvoorbeeld Noord-Holland" />
+              </div>
+            </div>
             <label>Logo URL</label>
             <div className="input-row">
               <input value={props.logoUrl} onChange={(event) => props.setLogoUrl(event.target.value)} placeholder="Automatisch gevonden of handmatig invullen" />
@@ -1507,6 +1638,7 @@ function SettingsView({
   prompts,
   setSettings,
   saveAnalysisPrompt,
+  onNotify,
   refresh
 }: {
   settings: ProviderSettings
@@ -1514,6 +1646,7 @@ function SettingsView({
   prompts: AnalysisPrompt[]
   setSettings: (settings: ProviderSettings) => void
   saveAnalysisPrompt: (promptId: string, promptText: string) => Promise<void>
+  onNotify: (tone: NonNullable<NotificationState>['tone'], text: string) => void
   refresh: () => void
 }) {
   const [openaiKey, setOpenaiKey] = useState('')
@@ -1531,29 +1664,47 @@ function SettingsView({
   const [scanMaxDepth, setScanMaxDepth] = useState(settings.scan_max_depth)
   const [scanMaxParallelItems, setScanMaxParallelItems] = useState(settings.scan_max_parallel_items)
   const [activeTab, setActiveTab] = useState<SettingsTab>('providers')
+  const [testingProvider, setTestingProvider] = useState<'openai' | 'openrouter' | null>(null)
 
   async function save() {
-    const saved = await api.saveProviderSettings({
-      openai_api_key: openaiKey,
-      openrouter_api_key: openrouterKey,
-      google_client_id: googleClientId,
-      google_client_secret: googleClientSecret,
-      default_summary_provider: summaryProvider,
-      default_summary_model: summaryModel,
-      default_embedding_provider: embeddingProvider,
-      default_embedding_model: embeddingModel,
-      default_agent_provider: agentProvider,
-      default_agent_model: agentModel,
-      scan_max_items: scanMaxItems,
-      scan_max_file_mb: scanMaxFileMb,
-      scan_max_depth: scanMaxDepth,
-      scan_max_parallel_items: scanMaxParallelItems
-    })
-    setSettings(saved)
-    setOpenaiKey('')
-    setOpenrouterKey('')
-    setGoogleClientSecret('')
-    await refresh()
+    try {
+      const saved = await api.saveProviderSettings({
+        openai_api_key: openaiKey,
+        openrouter_api_key: openrouterKey,
+        google_client_id: googleClientId,
+        google_client_secret: googleClientSecret,
+        default_summary_provider: summaryProvider,
+        default_summary_model: summaryModel,
+        default_embedding_provider: embeddingProvider,
+        default_embedding_model: embeddingModel,
+        default_agent_provider: agentProvider,
+        default_agent_model: agentModel,
+        scan_max_items: scanMaxItems,
+        scan_max_file_mb: scanMaxFileMb,
+        scan_max_depth: scanMaxDepth,
+        scan_max_parallel_items: scanMaxParallelItems
+      })
+      setSettings(saved)
+      setOpenaiKey('')
+      setOpenrouterKey('')
+      setGoogleClientSecret('')
+      await refresh()
+      onNotify('success', 'Instellingen opgeslagen.')
+    } catch (error) {
+      onNotify('error', `Instellingen opslaan mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function testProvider(provider: 'openai' | 'openrouter') {
+    setTestingProvider(provider)
+    try {
+      const result = await api.testProvider(provider)
+      onNotify(result.ok ? 'success' : 'error', result.message)
+    } catch (error) {
+      onNotify('error', `${provider} test mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setTestingProvider(null)
+    }
   }
 
   return (
@@ -1576,12 +1727,18 @@ function SettingsView({
       {activeTab === 'providers' && (
         <div className="settings-tab-body">
           <div className="panel-title"><KeyRound size={18} /> Provider instellingen</div>
-          <StatusLine ok={settings.openai_configured} label="OpenAI API key" />
+          <StatusLine ok={settings.openai_configured} label={`OpenAI API key${settings.openai_key_preview ? ` (${settings.openai_key_preview}...)` : ''}`} />
           <label>Nieuwe OpenAI API key</label>
           <input type="password" value={openaiKey} onChange={(event) => setOpenaiKey(event.target.value)} placeholder={settings.openai_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-...'} />
-          <StatusLine ok={settings.openrouter_configured} label="OpenRouter API key" />
+          <button className="secondary provider-test-button" onClick={() => testProvider('openai')} disabled={testingProvider !== null || !settings.openai_configured}>
+            <Sparkles size={16} /> {testingProvider === 'openai' ? 'OpenAI testen...' : 'OpenAI testen'}
+          </button>
+          <StatusLine ok={settings.openrouter_configured} label={`OpenRouter API key${settings.openrouter_key_preview ? ` (${settings.openrouter_key_preview}...)` : ''}`} />
           <label>Nieuwe OpenRouter API key</label>
           <input type="password" value={openrouterKey} onChange={(event) => setOpenrouterKey(event.target.value)} placeholder={settings.openrouter_configured ? 'Ingesteld, laat leeg om te behouden' : 'sk-or-...'} />
+          <button className="secondary provider-test-button" onClick={() => testProvider('openrouter')} disabled={testingProvider !== null || !settings.openrouter_configured}>
+            <Sparkles size={16} /> {testingProvider === 'openrouter' ? 'OpenRouter testen...' : 'OpenRouter testen'}
+          </button>
           <label>Default summary model</label>
           <ModelSelect
             models={models}

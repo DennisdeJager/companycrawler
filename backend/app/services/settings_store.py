@@ -27,6 +27,10 @@ def _domain_from_origin(origin: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
+def _key_preview(value: str) -> str:
+    return value[:12] if value else ""
+
+
 def get_setting(db: Session | None, key: str, default: str = "") -> str:
     if key in ENV_MANAGED_KEYS:
         settings = get_settings()
@@ -100,6 +104,8 @@ def provider_status(db: Session) -> dict:
     return {
         "openai_configured": bool(openai_key),
         "openrouter_configured": bool(openrouter_key),
+        "openai_key_preview": _key_preview(openai_key),
+        "openrouter_key_preview": _key_preview(openrouter_key),
         "google_auth_enabled": bool(google_client_id),
         "google_client_secret_configured": bool(google_client_secret),
         "google_client_id": google_client_id,

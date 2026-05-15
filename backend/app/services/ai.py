@@ -51,16 +51,37 @@ class AIService:
         return get_setting(self.db, "default_agent_model", self.settings.default_agent_model)
 
     async def detect_company_name(self, url: str, homepage_text: str) -> str:
+        return (await self.detect_company_profile(url, homepage_text))["company_name"]
+
+    async def detect_company_profile(self, url: str, homepage_text: str) -> dict[str, str]:
         title_match = re.search(r"<title>(.*?)</title>", homepage_text, re.I | re.S)
         seed = title_match.group(1) if title_match else homepage_text[:200]
         clean = re.sub(r"\s+", " ", seed).strip()
         if self.openai_api_key:
-            prompt = f"Extract only the full company name from this homepage text for {url}. Return only the name.\n\n{clean[:4000]}"
-            result = await self._chat_provider("openai", self.summary_model, prompt, max_tokens=80)
-            if result:
-                return result.strip().strip('"')
+            prompt = (
+                "Bepaal uit deze homepage de bedrijfsnaam, vestigingsplaats en regio/provincie. "
+                "Geef alleen JSON terug met keys company_name, company_place en region. "
+                "Gebruik lege strings wanneer iets niet betrouwbaar te bepalen is.\n\n"
+                f"URL: {url}\nHomepage tekst:\n{clean[:5000]}"
+            )
+            result = await self._chat_provider("openai", self.summary_model, prompt, max_tokens=180)
+            parsed = self._parse_company_profile(result)
+            if parsed["company_name"]:
+                return parsed
         host = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
-        return host.split(".")[0].replace("-", " ").title()
+        return {"company_name": host.split(".")[0].replace("-", " ").title(), "company_place": "", "region": ""}
+
+    async def test_provider(self, provider: str) -> dict[str, str | bool]:
+        provider = (provider or "").lower()
+        if provider not in {"openai", "openrouter"}:
+            return {"ok": False, "provider": provider, "message": "Onbekende provider."}
+        if not self._provider_has_key(provider):
+            return {"ok": False, "provider": provider, "message": f"{provider} API key is niet ingesteld."}
+        model = self.summary_model if provider == "openai" else (self.agent_model if self.agent_provider == "openrouter" else "openrouter/auto")
+        result = await self._chat_provider(provider, model, "Antwoord alleen met: ok", max_tokens=12)
+        if result:
+            return {"ok": True, "provider": provider, "message": f"{provider} verbinding werkt met model {model}."}
+        return {"ok": False, "provider": provider, "message": self.last_provider_error or f"{provider} gaf geen bruikbare respons."}
 
     async def summarize(self, title: str, text: str) -> tuple[str, str]:
         clean = re.sub(r"\s+", " ", text).strip()
@@ -362,6 +383,18 @@ class AIService:
                 if isinstance(text, str) and text.strip():
                     parts.append(text.strip())
         return "\n".join(parts).strip()
+
+    def _parse_company_profile(self, value: str) -> dict[str, str]:
+        try:
+            match = re.search(r"\{.*\}", value or "", flags=re.S)
+            payload = json.loads(match.group(0) if match else value)
+            return {
+                "company_name": str(payload.get("company_name") or payload.get("Bedrijfsnaam") or "").strip().strip('"'),
+                "company_place": str(payload.get("company_place") or payload.get("Bedrijfsplaats") or payload.get("plaats") or "").strip().strip('"'),
+                "region": str(payload.get("region") or payload.get("Regio") or "").strip().strip('"'),
+            }
+        except Exception:
+            return {"company_name": (value or "").strip().strip('"'), "company_place": "", "region": ""}
 
     def _provider_error(self, endpoint: str, response: httpx.Response) -> str:
         detail = ""

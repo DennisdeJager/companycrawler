@@ -48,6 +48,10 @@ def _upgrade_schema() -> None:
             connection.execute(text("ALTER TYPE scanstatus ADD VALUE IF NOT EXISTS 'paused'"))
             connection.execute(text("ALTER TYPE scanstatus ADD VALUE IF NOT EXISTS 'stopped'"))
             connection.execute(text("ALTER TABLE websites ADD COLUMN IF NOT EXISTS logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
+            connection.execute(text("ALTER TABLE websites ADD COLUMN IF NOT EXISTS company_place VARCHAR(255) NOT NULL DEFAULT ''"))
+            connection.execute(text("ALTER TABLE websites ADD COLUMN IF NOT EXISTS region VARCHAR(255) NOT NULL DEFAULT ''"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_websites_company_place ON websites (company_place)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_websites_region ON websites (region)"))
             connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_hash VARCHAR(64) NOT NULL DEFAULT ''"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_documents_text_hash ON documents (text_hash)"))
     elif engine.dialect.name == "sqlite":
@@ -55,6 +59,10 @@ def _upgrade_schema() -> None:
             website_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(websites)"))]
             if "logo_url" not in website_columns:
                 connection.execute(text("ALTER TABLE websites ADD COLUMN logo_url VARCHAR(2048) NOT NULL DEFAULT ''"))
+            if "company_place" not in website_columns:
+                connection.execute(text("ALTER TABLE websites ADD COLUMN company_place VARCHAR(255) NOT NULL DEFAULT ''"))
+            if "region" not in website_columns:
+                connection.execute(text("ALTER TABLE websites ADD COLUMN region VARCHAR(255) NOT NULL DEFAULT ''"))
             document_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(documents)"))]
             if "text_hash" not in document_columns:
                 connection.execute(text("ALTER TABLE documents ADD COLUMN text_hash VARCHAR(64) NOT NULL DEFAULT ''"))

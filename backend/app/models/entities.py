@@ -42,6 +42,8 @@ class Website(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     url: Mapped[str] = mapped_column(String(2048), unique=True, index=True)
     company_name: Mapped[str] = mapped_column(String(255), index=True)
+    company_place: Mapped[str] = mapped_column(String(255), default="", index=True)
+    region: Mapped[str] = mapped_column(String(255), default="", index=True)
     logo_url: Mapped[str] = mapped_column(String(2048), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

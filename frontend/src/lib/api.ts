@@ -2,6 +2,8 @@ export type Website = {
   id: number
   url: string
   company_name: string
+  company_place: string
+  region: string
   logo_url: string
   created_at: string
   updated_at: string
@@ -67,6 +69,8 @@ export type User = {
 export type ProviderSettings = {
   openai_configured: boolean
   openrouter_configured: boolean
+  openai_key_preview: string
+  openrouter_key_preview: string
   google_auth_enabled: boolean
   google_client_secret_configured: boolean
   google_client_id: string
@@ -127,7 +131,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
     ...options
   })
-  if (!response.ok) throw new Error(await response.text())
+  if (!response.ok) {
+    const text = await response.text()
+    let detail = text
+    try {
+      const payload = JSON.parse(text)
+      detail = typeof payload.detail === 'string' ? payload.detail : text
+    } catch {
+      detail = text
+    }
+    throw new Error(detail || `HTTP ${response.status}`)
+  }
   return response.json()
 }
 
@@ -136,11 +150,12 @@ export const api = {
   session: () => request<User>('/api/auth/session'),
   login: (credential: string) => request<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
   websites: () => request<Website[]>('/api/websites'),
-  createWebsite: (url: string, company_name: string, logo_url = '') => request<Website>('/api/websites', { method: 'POST', body: JSON.stringify({ url, company_name, logo_url }) }),
-  updateWebsite: (id: number, data: { url?: string; company_name?: string; logo_url?: string }) => request<Website>(`/api/websites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  createWebsite: (data: { url: string; company_name: string; company_place?: string; region?: string; logo_url?: string }) =>
+    request<Website>('/api/websites', { method: 'POST', body: JSON.stringify(data) }),
+  updateWebsite: (id: number, data: { url?: string; company_name?: string; company_place?: string; region?: string; logo_url?: string }) => request<Website>(`/api/websites/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   resetWebsite: (id: number) => request<{ status: string }>(`/api/websites/${id}/reset`, { method: 'POST' }),
   deleteWebsite: (id: number) => request<{ status: string }>(`/api/websites/${id}`, { method: 'DELETE' }),
-  detectCompanyName: (url: string) => request<{ company_name: string; logo_url: string }>(`/api/detect-company-name?url=${encodeURIComponent(url)}`, { method: 'POST' }),
+  detectCompanyName: (url: string) => request<{ company_name: string; company_place: string; region: string; logo_url: string }>(`/api/detect-company-name?url=${encodeURIComponent(url)}`, { method: 'POST' }),
   startScan: (website_id: number) => request<Scan>('/api/scans', { method: 'POST', body: JSON.stringify({ website_id }) }),
   getScan: (id: number) => request<Scan>(`/api/scans/${id}`),
   pauseScan: (id: number) => request<Scan>(`/api/scans/${id}/pause`, { method: 'POST' }),
@@ -160,6 +175,7 @@ export const api = {
   providerSettings: () => request<ProviderSettings>('/api/settings/providers'),
   saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string; google_client_secret?: string }) =>
     request<ProviderSettings>('/api/settings/providers', { method: 'PUT', body: JSON.stringify(data) }),
+  testProvider: (provider: 'openai' | 'openrouter') => request<{ ok: boolean; provider: string; message: string }>(`/api/settings/providers/${provider}/test`, { method: 'POST' }),
   analysisPrompts: () => request<AnalysisPrompt[]>('/api/analysis-prompts'),
   saveAnalysisPrompt: (promptId: string, prompt_text: string) =>
     request<AnalysisPrompt>(`/api/analysis-prompts/${encodeURIComponent(promptId)}`, { method: 'PUT', body: JSON.stringify({ prompt_text }) }),

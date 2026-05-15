@@ -59,6 +59,18 @@ def test_detect_logo_url_falls_back_to_logo_image() -> None:
     assert crawler._detect_logo_url("https://example.com", html) == "https://example.com/assets/company-logo.svg"
 
 
+def test_parse_company_profile_accepts_json_and_dutch_keys() -> None:
+    from app.services.ai import AIService
+
+    ai = object.__new__(AIService)
+
+    assert ai._parse_company_profile('{"Bedrijfsnaam":"Smawa","Bedrijfsplaats":"Amsterdam","Regio":"Noord-Holland"}') == {
+        "company_name": "Smawa",
+        "company_place": "Amsterdam",
+        "region": "Noord-Holland",
+    }
+
+
 def test_content_hash_normalizes_whitespace_and_case() -> None:
     crawler = object.__new__(CompanyCrawler)
 

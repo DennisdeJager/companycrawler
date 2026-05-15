@@ -319,7 +319,13 @@ def delete_user(user_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
 
 @router.post("/websites", response_model=WebsiteRead)
 def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> Website:
-    website = Website(url=str(payload.url), company_name=payload.company_name, logo_url=payload.logo_url)
+    website = Website(
+        url=str(payload.url),
+        company_name=payload.company_name.strip(),
+        company_place=payload.company_place.strip(),
+        region=payload.region.strip(),
+        logo_url=payload.logo_url.strip(),
+    )
     db.add(website)
     db.commit()
     db.refresh(website)
@@ -339,9 +345,13 @@ def update_website(website_id: int, payload: WebsiteUpdate, db: Session = Depend
     if payload.url:
         website.url = str(payload.url)
     if payload.company_name:
-        website.company_name = payload.company_name
+        website.company_name = payload.company_name.strip()
+    if payload.company_place is not None:
+        website.company_place = payload.company_place.strip()
+    if payload.region is not None:
+        website.region = payload.region.strip()
     if payload.logo_url is not None:
-        website.logo_url = payload.logo_url
+        website.logo_url = payload.logo_url.strip()
     db.commit()
     db.refresh(website)
     return website
@@ -379,7 +389,15 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
 
 @router.post("/detect-company-name")
 async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[str, str]:
-    return await CompanyCrawler(db).detect_company_profile(url)
+    try:
+        return await CompanyCrawler(db).detect_company_profile(url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Bedrijfsprofiel detecteren mislukt: {exc}") from exc
+
+
+@router.post("/settings/providers/{provider}/test")
+async def test_provider(provider: str, db: Session = Depends(get_db)) -> dict[str, str | bool]:
+    return await AIService(db).test_provider(provider)
 
 
 @router.post("/scans", response_model=ScanRead)
