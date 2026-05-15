@@ -131,7 +131,7 @@ jobs:
           printf '%s\n' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           tar --exclude .git --exclude node_modules --exclude dist --exclude .env -czf /tmp/capps-source.tar.gz .
           scp -i ~/.ssh/deploy_key /tmp/capps-source.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/source.tar.gz"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && tar --overwrite --no-same-owner --no-same-permissions --no-overwrite-dir -xzf source.tar.gz && rm source.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && tar --overwrite --no-same-owner --no-same-permissions --touch -xzf source.tar.gz && rm source.tar.gz"
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi"
           COMPOSE_FILE=""
           for candidate in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
