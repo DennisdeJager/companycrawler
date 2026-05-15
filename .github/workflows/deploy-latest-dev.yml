@@ -123,16 +123,17 @@ jobs:
             IMAGE_REF="$IMAGE_REPOSITORY@$IMAGE_DIGEST"
           fi
           CALLBACK_IMAGE_DIGEST="${IMAGE_DIGEST:-source-${GITHUB_SHA}}"
+          REMOTE_RELEASE_DIR="$DEPLOY_APP_DIR/releases/$GITHUB_SHA"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_APP_DIR'"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_RELEASE_DIR'"
           printf '%s\n' "$GHCR_TOKEN" | ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           tar --exclude .git --exclude node_modules --exclude dist --exclude .env -czf /tmp/capps-source.tar.gz .
-          scp -i ~/.ssh/deploy_key /tmp/capps-source.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/source.tar.gz"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && tar --unlink-first --no-same-owner --no-same-permissions --touch -xzf source.tar.gz && rm source.tar.gz"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi"
+          scp -i ~/.ssh/deploy_key /tmp/capps-source.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_RELEASE_DIR/source.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_RELEASE_DIR' && tar --no-same-owner --no-same-permissions --touch -xzf source.tar.gz && rm source.tar.gz"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "if [ -f '$DEPLOY_APP_DIR/.env' ]; then cp '$DEPLOY_APP_DIR/.env' '$REMOTE_RELEASE_DIR/.env'; elif [ -f '$REMOTE_RELEASE_DIR/.env.example' ]; then cp '$REMOTE_RELEASE_DIR/.env.example' '$REMOTE_RELEASE_DIR/.env'; fi"
           COMPOSE_FILE=""
           for candidate in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
             if [ -f "$candidate" ]; then COMPOSE_FILE="$candidate"; break; fi
@@ -158,9 +159,9 @@ jobs:
           if grep -Eq '^[[:space:]]+build:' "$COMPOSE_FILE"; then
             COMPOSE_UP_FLAG="--build"
           fi
-          scp -i ~/.ssh/deploy_key "$COMPOSE_FILE" "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_APP_DIR/compose.yaml"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && IMAGE_REF='$IMAGE_REF' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d $COMPOSE_UP_FLAG"
-          WEB_CONTAINER_IP=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_APP_DIR' && cid=\$(COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' ps -q '${WEB_SERVICE_NAME:-web}' 2>/dev/null || true); if [ -n \"\$cid\" ]; then docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \"\$cid\"; fi" | tr -d '\r\n')
+          scp -i ~/.ssh/deploy_key "$COMPOSE_FILE" "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_RELEASE_DIR/compose.yaml"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_RELEASE_DIR' && IMAGE_REF='$IMAGE_REF' WEB_PORT='${WEB_PORT:-${APP_PORT:-3000}}' APP_PORT='${APP_PORT:-${WEB_PORT:-3000}}' APP_ENV='${APP_ENV:-dev}' COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' up -d $COMPOSE_UP_FLAG"
+          WEB_CONTAINER_IP=$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_RELEASE_DIR' && cid=\$(COMPOSE_PROJECT_NAME='${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' docker compose -p '${COMPOSE_PROJECT_NAME:-$CAPP_APP_ID-dev}' ps -q '${WEB_SERVICE_NAME:-web}' 2>/dev/null || true); if [ -n \"\$cid\" ]; then docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \"\$cid\"; fi" | tr -d '\r\n')
           CADDY_TARGET=""
           if [ -n "${WEB_CONTAINER_IP:-}" ] && [ -n "${WEB_INTERNAL_PORT:-}" ]; then
             CADDY_TARGET="$WEB_CONTAINER_IP:$WEB_INTERNAL_PORT"
