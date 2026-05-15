@@ -1,6 +1,8 @@
 import pytest
 
 from app.api import mcp
+from app.models.entities import ApiTokenScope
+from app.services.auth import ApiPrincipal
 
 
 @pytest.mark.asyncio
@@ -62,6 +64,23 @@ async def test_mcp_tools_call_returns_structured_content(monkeypatch) -> None:
     result = response["result"]
     assert result["structuredContent"]["websites"][0]["company_name"] == "Example"
     assert result["content"][0]["type"] == "text"
+
+
+@pytest.mark.asyncio
+async def test_mcp_read_token_cannot_execute_tools() -> None:
+    response = await mcp._json_rpc_response(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "start_scan", "arguments": {"website_id": 1}},
+        },
+        db=None,
+        principal=ApiPrincipal(kind="api_token", name="readonly", scope=ApiTokenScope.read),
+    )
+
+    assert response["error"]["code"] == -32001
+    assert "scope" in response["error"]["message"]
 
 
 @pytest.mark.asyncio

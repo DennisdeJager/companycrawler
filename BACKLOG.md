@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] API- en MCP-routes afgeschermd met sessie-auth, RBAC, hashed Bearer tokens, MCP-scopes en admin-tokenbeheer.
 - [x] Scan- en notificatiefouten sluitbaar gemaakt met automatische verwijdering na 30 seconden; knowledge graph opent standaard tot niveau 2; API- en MCP-documentatie uitgebreid.
 - [x] Reset data-knop toegevoegd aan websitebeheer; reset verwijdert nu scan-, crawl-, vector- en analysedata per website.
 - [x] Darkmode Smawa-logo vervangen door `smawa_logo_transparant_darktheme.png`.
@@ -42,6 +43,7 @@
 
 ## Next
 
+- [ ] Gelekte/ gedeelde OpenAI-, OpenRouter-, Google- en GitHub-secrets roteren en alleen via secret management terugzetten.
 - [ ] Productie Google OAuth client configureren.
 - [ ] OpenAI/OpenRouter keys configureren.
 - [ ] Eerste echte scan uitvoeren in dev container.

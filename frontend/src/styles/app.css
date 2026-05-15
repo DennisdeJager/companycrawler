@@ -1018,6 +1018,71 @@ button.compact {
   display: grid;
   gap: 12px;
 }
+.token-panel {
+  display: grid;
+  gap: 14px;
+}
+.token-create-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(150px, 0.6fr) minmax(190px, 0.8fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.token-create-grid button.primary {
+  margin-top: 0;
+}
+.token-secret-box {
+  border: 1px solid #f1d39b;
+  background: #fff9ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.token-secret-box code,
+.token-help code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.token-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.token-help code {
+  background: #f6f8fa;
+  border: 1px solid #eef2f5;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.token-table {
+  border: 1px solid #eef2f5;
+  border-radius: 8px;
+  overflow: auto;
+}
+.token-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(110px, 0.5fr) minmax(130px, 0.55fr) minmax(180px, 0.9fr) minmax(160px, 0.8fr) minmax(220px, 0.8fr);
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #eef2f5;
+  align-items: center;
+  font-size: 13px;
+}
+.token-row:last-child {
+  border-bottom: 0;
+}
+.token-header {
+  background: #f6f8fa;
+  color: #66727f;
+  font-weight: 800;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.token-actions {
+  margin-top: 0;
+}
 .log-table {
   border: 1px solid #eef2f5;
   border-radius: 8px;
@@ -1404,6 +1469,9 @@ button.compact {
 .theme-dark .docs-panel code,
 .theme-dark .table-row,
 .theme-dark .origin-list code,
+.theme-dark .token-table,
+.theme-dark .token-row,
+.theme-dark .token-help code,
 .theme-dark .diagnostic-box,
 .theme-dark .full-text-block p,
 .theme-dark .modal-panel,
@@ -1447,6 +1515,14 @@ button.compact {
   background: #123033;
   border-color: #236b6e;
   color: #8bd5d5;
+}
+.theme-dark .token-header {
+  background: #1d2a34;
+  color: #9cafbd;
+}
+.theme-dark .token-secret-box {
+  background: #2f2616;
+  border-color: #7c5b21;
 }
 .theme-dark .mind-node-icon {
   background: #21303b;
@@ -1534,7 +1610,8 @@ button.compact {
   nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard-layout, .split-layout, .knowledge-layout, .analysis-layout { grid-template-columns: 1fr; }
   .knowledge-layout > .inspector-panel { position: static; max-height: none; }
-  .table-row, .user-management-row { grid-template-columns: 1fr; }
+  .table-row, .user-management-row, .token-create-grid, .token-row { grid-template-columns: 1fr; }
+  .token-header { display: none; }
   .mindmap-header { display: grid; }
   .mindmap-toolbar { justify-content: flex-start; }
   .mindmap-panel { min-height: auto; }

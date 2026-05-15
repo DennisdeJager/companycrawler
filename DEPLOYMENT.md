@@ -44,6 +44,13 @@ companycrawler.smawa.nl {
 
 Wanneer API en frontend op hetzelfde domein draaien, proxyt nginx `/api` en `/mcp` door naar de backend.
 
+## Security checks
+
+- `GET /api/health` blijft publiek voor load balancers en ALM.
+- Swagger/OpenAPI loopt via `/api/docs` en `/api/openapi.json` en vereist een admin-sessie.
+- `GET /mcp` en `POST /mcp` moeten zonder Bearer API token `401` geven.
+- MCP-readiness checks die het manifest willen lezen moeten een geldig API token meesturen.
+
 ## Google OAuth
 
 De webconsole gebruikt een server-side Google OAuth redirect-flow. Hiervoor is een OAuth Client ID van het type `Web application` nodig.

@@ -14,6 +14,12 @@ class UserRole(str, Enum):
     guest = "guest"
 
 
+class ApiTokenScope(str, Enum):
+    read = "read"
+    execute = "execute"
+    admin = "admin"
+
+
 class ScanStatus(str, Enum):
     queued = "queued"
     running = "running"
@@ -34,6 +40,20 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(24), index=True)
+    scope: Mapped[ApiTokenScope] = mapped_column(SAEnum(ApiTokenScope), default=ApiTokenScope.read, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Website(Base):

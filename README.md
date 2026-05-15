@@ -8,6 +8,7 @@ Companycrawler verzamelt publieke bedrijfsinformatie vanaf de website van een be
 - Worker: Python crawler met same-domain limieten
 - Frontend: React + Vite
 - Auth: Google OAuth token verificatie met first-user-admin flow
+- API/MCP auth: websessies voor de console, hashed Bearer tokens met scopes voor externe clients
 - AI providers: OpenAI en OpenRouter voor LLM taken; centrale selectie voor summary-, embedding- en agentmodellen; OpenAI-compatible embeddings met lokale fallback voor development
 
 ## Snel starten
@@ -21,13 +22,13 @@ Daarna:
 
 - Webconsole: http://localhost:8080
 - API: http://localhost:8000
-- Swagger: http://localhost:8000/docs
-- MCP manifest: http://localhost:8000/mcp
+- Swagger: http://localhost:8000/api/docs, alleen voor admins met sessiecookie
+- MCP manifest: http://localhost:8000/mcp, alleen met Bearer API token
 - MCP JSON-RPC endpoint voor ChatGPT en andere MCP-clients: `POST http://localhost:8000/mcp`
 
 ## MCP gebruik
 
-De MCP server ondersteunt Streamable HTTP via JSON-RPC op `/mcp`. Gebruik eerst `initialize`, daarna `tools/list` en vervolgens `tools/call`.
+De MCP server ondersteunt Streamable HTTP via JSON-RPC op `/mcp`. MCP accepteert alleen API tokens via `Authorization: Bearer <token>`, geen browsercookie. Maak tokens aan via Settings > API & MCP tokens. Scopes zijn `read`, `execute` en `admin`; `execute` is nodig voor tools die scans of analyses starten.
 
 Voorbeeld:
 
@@ -36,6 +37,10 @@ Voorbeeld:
 ```
 
 De oudere tool-endpoints onder `/mcp/tools/...` blijven beschikbaar voor bestaande scripts.
+
+Alle niet-publieke REST-routes vereisen een geldige sessie. Beheeracties zoals gebruikers, provider secrets, promptbeheer, logs, tokenbeheer, reset/verwijderen en Swagger vereisen de rol `admin`.
+
+Zet in elke gedeelde of publieke omgeving een sterke unieke `APP_SECRET_KEY`; deze sleutel ondertekent websessies. Gebruik nooit de developmentwaarde uit `.env.example` buiten lokale tests.
 
 ## Belangrijke scope
 

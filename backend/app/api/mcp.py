@@ -3,13 +3,15 @@ import inspect
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models import AnalysisPrompt, AnalysisRun, ScanJob, Website
+from app.models.entities import ApiTokenScope
 from app.schemas.dto import SearchRequest
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts, serialize_analysis_run
+from app.services.auth import ApiPrincipal, require_mcp_principal, require_principal_scope
 from app.services.search import semantic_search
 
 router = APIRouter(prefix="/mcp", tags=["MCP"])
@@ -206,7 +208,7 @@ def _scan_output_schema() -> dict[str, Any]:
 
 
 @router.get("")
-def manifest() -> dict:
+def manifest(_: ApiPrincipal = Depends(require_mcp_principal)) -> dict:
     tools = _tool_descriptors()
     return {
         "name": "companycrawler",
@@ -227,7 +229,7 @@ def manifest() -> dict:
 
 
 @router.post("")
-async def json_rpc(request: Request, db: Session = Depends(get_db)) -> dict | None:
+async def json_rpc(request: Request, principal: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict | None:
     try:
         payload = await request.json()
     except json.JSONDecodeError:
@@ -237,12 +239,12 @@ async def json_rpc(request: Request, db: Session = Depends(get_db)) -> dict | No
             "error": {"code": -32700, "message": "Parse error: invalid JSON"},
         }
     if isinstance(payload, list):
-        responses = [await _json_rpc_response(item, db) for item in payload]
+        responses = [await _json_rpc_response(item, db, principal) for item in payload]
         return [response for response in responses if response is not None]
-    return await _json_rpc_response(payload, db)
+    return await _json_rpc_response(payload, db, principal)
 
 
-async def _handle_json_rpc(payload: dict[str, Any], db: Session) -> dict[str, Any] | None:
+async def _handle_json_rpc(payload: dict[str, Any], db: Session, principal: ApiPrincipal | None = None) -> dict[str, Any] | None:
     method = payload.get("method")
     params = payload.get("params") or {}
     if method == "initialize":
@@ -262,26 +264,28 @@ async def _handle_json_rpc(payload: dict[str, Any], db: Session) -> dict[str, An
     if method == "tools/call":
         tool_name = params.get("name")
         arguments = params.get("arguments") or {}
-        return await _call_tool(tool_name, arguments, db)
+        return await _call_tool(tool_name, arguments, db, principal)
     raise ValueError(f"Unsupported MCP method: {method}")
 
 
-async def _json_rpc_response(payload: dict[str, Any], db: Session) -> dict[str, Any] | None:
+async def _json_rpc_response(payload: dict[str, Any], db: Session, principal: ApiPrincipal | None = None) -> dict[str, Any] | None:
     request_id = payload.get("id")
     if request_id is None:
         return None
     try:
-        result = await _handle_json_rpc(payload, db)
+        result = await _handle_json_rpc(payload, db, principal)
         if result is None:
             return None
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
     except ValueError as exc:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": str(exc)}}
+    except HTTPException as exc:
+        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32001, "message": str(exc.detail)}}
     except Exception as exc:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": str(exc)}}
 
 
-async def _call_tool(tool_name: str, arguments: dict[str, Any], db: Session) -> dict[str, Any]:
+async def _call_tool(tool_name: str, arguments: dict[str, Any], db: Session, principal: ApiPrincipal | None = None) -> dict[str, Any]:
     handlers: dict[str, Callable[..., Any]] = {
         "list_websites": list_websites,
         "start_scan": start_scan,
@@ -297,7 +301,9 @@ async def _call_tool(tool_name: str, arguments: dict[str, Any], db: Session) -> 
     handler = handlers.get(tool_name)
     if not handler:
         raise ValueError(f"Unknown MCP tool: {tool_name}")
-    result = await _invoke_tool(handler, arguments, db)
+    if principal is not None:
+        require_principal_scope(principal, _tool_scope(tool_name))
+    result = await _invoke_tool(handler, arguments, db, principal)
     if "error" in result:
         return {
             "isError": True,
@@ -311,27 +317,33 @@ async def _call_tool(tool_name: str, arguments: dict[str, Any], db: Session) -> 
     }
 
 
-async def _invoke_tool(handler: Callable[..., Any], arguments: dict[str, Any], db: Session) -> dict[str, Any]:
+def _tool_scope(tool_name: str) -> ApiTokenScope:
+    if tool_name in {"start_scan", "run_company_analysis"}:
+        return ApiTokenScope.execute
+    return ApiTokenScope.read
+
+
+async def _invoke_tool(handler: Callable[..., Any], arguments: dict[str, Any], db: Session, principal: ApiPrincipal | None = None) -> dict[str, Any]:
     if handler is list_websites:
-        result = handler(db=db)
+        result = handler(_=principal, db=db) if principal else handler(db=db)
     elif handler is start_scan:
-        result = handler(website_id=arguments.get("website_id"), db=db)
+        result = handler(website_id=arguments.get("website_id"), principal=principal, db=db) if principal else handler(website_id=arguments.get("website_id"), db=db)
     elif handler is get_scan_status:
-        result = handler(scan_id=arguments.get("scan_id"), db=db)
+        result = handler(scan_id=arguments.get("scan_id"), _=principal, db=db) if principal else handler(scan_id=arguments.get("scan_id"), db=db)
     elif handler is search_company_data:
-        result = handler(payload=SearchRequest(**arguments), db=db)
+        result = handler(payload=SearchRequest(**arguments), _=principal, db=db) if principal else handler(payload=SearchRequest(**arguments), db=db)
     elif handler is get_company_profile:
-        result = handler(website_id=arguments.get("website_id"), db=db)
+        result = handler(website_id=arguments.get("website_id"), _=principal, db=db) if principal else handler(website_id=arguments.get("website_id"), db=db)
     elif handler is list_analysis_prompts:
-        result = handler(db=db)
+        result = handler(_=principal, db=db) if principal else handler(db=db)
     elif handler is run_company_analysis:
-        result = handler(website_id=arguments.get("website_id"), db=db)
+        result = handler(website_id=arguments.get("website_id"), principal=principal, db=db) if principal else handler(website_id=arguments.get("website_id"), db=db)
     elif handler is get_company_analysis:
-        result = handler(analysis_id=arguments.get("analysis_id"), db=db)
+        result = handler(analysis_id=arguments.get("analysis_id"), _=principal, db=db) if principal else handler(analysis_id=arguments.get("analysis_id"), db=db)
     elif handler is generate_company_scenarios:
-        result = handler(website_id=arguments.get("website_id"), db=db)
+        result = handler(website_id=arguments.get("website_id"), _=principal, db=db) if principal else handler(website_id=arguments.get("website_id"), db=db)
     elif handler is generate_poc_brief:
-        result = handler(website_id=arguments.get("website_id"), db=db)
+        result = handler(website_id=arguments.get("website_id"), _=principal, db=db) if principal else handler(website_id=arguments.get("website_id"), db=db)
     else:
         raise ValueError("Unsupported MCP tool handler")
     if inspect.isawaitable(result):
@@ -350,7 +362,7 @@ def _jsonable(value: Any) -> Any:
 
 
 @router.post("/tools/list_websites")
-def list_websites(db: Session = Depends(get_db)) -> dict:
+def list_websites(_: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     return {
         "websites": [
             {
@@ -367,7 +379,9 @@ def list_websites(db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/tools/start_scan")
-def start_scan(website_id: int, db: Session = Depends(get_db)) -> dict:
+def start_scan(website_id: int, principal: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
+    if isinstance(principal, ApiPrincipal):
+        require_principal_scope(principal, ApiTokenScope.execute)
     website = db.get(Website, website_id)
     if not website:
         return {"error": "Website not found"}
@@ -379,7 +393,7 @@ def start_scan(website_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/tools/get_scan_status")
-def get_scan_status(scan_id: int, db: Session = Depends(get_db)) -> dict:
+def get_scan_status(scan_id: int, _: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         return {"error": "Scan not found"}
@@ -387,12 +401,12 @@ def get_scan_status(scan_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/tools/search_company_data")
-async def search_company_data(payload: SearchRequest, db: Session = Depends(get_db)) -> dict:
+async def search_company_data(payload: SearchRequest, _: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     return {"results": await semantic_search(db, payload.query, payload.website_id, payload.limit)}
 
 
 @router.post("/tools/get_company_profile")
-def get_company_profile(website_id: int, db: Session = Depends(get_db)) -> dict:
+def get_company_profile(website_id: int, _: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     website = db.get(Website, website_id)
     if not website:
         return {"error": "Website not found"}
@@ -409,7 +423,7 @@ def get_company_profile(website_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/tools/list_analysis_prompts")
-def list_analysis_prompts(db: Session = Depends(get_db)) -> dict:
+def list_analysis_prompts(_: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     seed_default_analysis_prompts(db)
     prompts = db.query(AnalysisPrompt).order_by(AnalysisPrompt.sort_order, AnalysisPrompt.prompt_id).all()
     return {
@@ -428,14 +442,16 @@ def list_analysis_prompts(db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/tools/run_company_analysis")
-async def run_company_analysis(website_id: int, db: Session = Depends(get_db)) -> dict:
+async def run_company_analysis(website_id: int, principal: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
+    if isinstance(principal, ApiPrincipal):
+        require_principal_scope(principal, ApiTokenScope.execute)
     if not db.get(Website, website_id):
         return {"error": "Website not found"}
     return serialize_analysis_run(await AnalysisService(db).run_company_analysis(website_id))
 
 
 @router.post("/tools/get_company_analysis")
-def get_company_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
+def get_company_analysis(analysis_id: int, _: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     run = db.get(AnalysisRun, analysis_id)
     if not run:
         return {"error": "Analysis not found"}
@@ -443,7 +459,7 @@ def get_company_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dic
 
 
 @router.post("/tools/generate_company_scenarios")
-def generate_company_scenarios(website_id: int, db: Session = Depends(get_db)) -> dict:
+def generate_company_scenarios(website_id: int, _: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     run = _latest_analysis(db, website_id)
     if not run:
         return {"error": "Analysis not found"}
@@ -464,7 +480,7 @@ def generate_company_scenarios(website_id: int, db: Session = Depends(get_db)) -
 
 
 @router.post("/tools/generate_poc_brief")
-def generate_poc_brief(website_id: int, db: Session = Depends(get_db)) -> dict:
+def generate_poc_brief(website_id: int, _: ApiPrincipal = Depends(require_mcp_principal), db: Session = Depends(get_db)) -> dict:
     run = _latest_analysis(db, website_id)
     if not run:
         return {"error": "Analysis not found"}

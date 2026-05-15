@@ -1,15 +1,21 @@
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
-from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, AppLog, ContentChunk, Document, ModelConfig, ScanJob, User, Website
+from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, ApiToken, AppLog, ContentChunk, Document, ModelConfig, ScanJob, User, Website
 from app.models.entities import ScanStatus, UserRole
 from app.schemas.dto import (
+    ApiTokenCreate,
+    ApiTokenCreated,
+    ApiTokenRead,
+    ApiTokenUpdate,
+    AuthConfigRead,
     DocumentDetail,
     DocumentRead,
     AppLogRead,
@@ -38,11 +44,16 @@ from app.services.auth import (
     OAUTH_STATE_COOKIE,
     SESSION_COOKIE,
     build_google_authorization_url,
+    create_api_token_secret,
     create_session_token,
     get_session_user,
+    hash_api_token,
     login_with_google,
     login_with_google_code,
     new_oauth_state,
+    require_api_admin,
+    require_api_user,
+    validate_api_token_scope,
 )
 from app.services.crawler import CompanyCrawler
 from app.services.search import semantic_search
@@ -162,12 +173,12 @@ def health() -> dict[str, str]:
 
 
 @router.get("/settings/providers", response_model=ProviderSettingsRead, summary="Lees AI-, OAuth- en crawlconfiguratie", description="Geeft veilige configuratiestatus terug voor OpenAI, OpenRouter, Google OAuth, modelkeuzes en crawlgrenzen. Secretwaarden worden nooit teruggegeven; alleen aanwezigheid of een gemaskeerde preview.")
-def get_provider_settings(db: Session = Depends(get_db)) -> dict:
+def get_provider_settings(_: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
     return provider_status(db)
 
 
 @router.put("/settings/providers", response_model=ProviderSettingsRead, summary="Werk providers en crawlgrenzen bij", description="Beheert centrale instellingen voor AI-providers, Google OAuth, standaardmodellen en crawlprestaties. Lege secretvelden overschrijven bestaande secrets niet.")
-def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depends(get_db)) -> dict:
+def update_provider_settings(payload: ProviderSettingsUpdate, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
     values = payload.model_dump(exclude_unset=True)
     for key, value in values.items():
         if value is None:
@@ -180,13 +191,13 @@ def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depe
 
 
 @router.get("/settings/logs", response_model=list[AppLogRead])
-def list_logs(limit: int = 120, db: Session = Depends(get_db)) -> list[AppLog]:
+def list_logs(limit: int = 120, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> list[AppLog]:
     bounded_limit = max(1, min(limit, 500))
     return db.query(AppLog).order_by(AppLog.created_at.desc(), AppLog.id.desc()).limit(bounded_limit).all()
 
 
 @router.delete("/settings/logs")
-def clear_logs(db: Session = Depends(get_db)) -> dict[str, str]:
+def clear_logs(_: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict[str, str]:
     db.query(AppLog).delete()
     db.commit()
     return {"status": "deleted"}
@@ -198,6 +209,17 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)) -> 
         return login_with_google(db, payload.credential)
     except Exception as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.get("/auth/config", response_model=AuthConfigRead)
+def auth_config(db: Session = Depends(get_db)) -> dict:
+    status = provider_status(db)
+    return {
+        "google_auth_enabled": status["google_auth_enabled"],
+        "app_url_origin": status["app_url_origin"],
+        "google_redirect_uri": status["google_redirect_uri"],
+        "google_authorized_domains": status["google_authorized_domains"],
+    }
 
 
 @router.get("/auth/google/start")
@@ -257,7 +279,7 @@ def logout() -> RedirectResponse:
 
 
 @router.get("/users", response_model=list[UserRead])
-def list_users(db: Session = Depends(get_db)) -> list[User]:
+def list_users(_: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> list[User]:
     return db.query(User).order_by(User.created_at).all()
 
 
@@ -268,7 +290,7 @@ def _validate_user_role(role: str) -> UserRole:
 
 
 @router.post("/users", response_model=UserRead)
-def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
+def create_user(payload: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> User:
     email = payload.email.strip().lower()
     if "@" not in email:
         raise HTTPException(status_code=400, detail="Invalid email")
@@ -288,7 +310,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
 
 
 @router.patch("/users/{user_id}", response_model=UserRead)
-def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)) -> User:
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> User:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -312,7 +334,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
 
 
 @router.patch("/users/{user_id}/role", response_model=UserRead)
-def update_user_role(user_id: int, role: str, db: Session = Depends(get_db)) -> User:
+def update_user_role(user_id: int, role: str, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> User:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -323,7 +345,7 @@ def update_user_role(user_id: int, role: str, db: Session = Depends(get_db)) -> 
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_user(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> dict[str, str]:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -333,7 +355,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
 
 
 @router.post("/websites", response_model=WebsiteRead)
-def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> Website:
+def create_website(payload: WebsiteCreate, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> Website:
     website = Website(
         url=str(payload.url),
         company_name=payload.company_name.strip(),
@@ -348,12 +370,12 @@ def create_website(payload: WebsiteCreate, db: Session = Depends(get_db)) -> Web
 
 
 @router.get("/websites", response_model=list[WebsiteRead])
-def list_websites(db: Session = Depends(get_db)) -> list[Website]:
+def list_websites(_: User = Depends(require_api_user), db: Session = Depends(get_db)) -> list[Website]:
     return db.query(Website).order_by(Website.created_at.desc()).all()
 
 
 @router.patch("/websites/{website_id}", response_model=WebsiteRead)
-def update_website(website_id: int, payload: WebsiteUpdate, db: Session = Depends(get_db)) -> Website:
+def update_website(website_id: int, payload: WebsiteUpdate, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> Website:
     website = db.get(Website, website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
@@ -373,7 +395,7 @@ def update_website(website_id: int, payload: WebsiteUpdate, db: Session = Depend
 
 
 @router.delete("/websites/{website_id}")
-def delete_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_website(website_id: int, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict[str, str]:
     website = db.get(Website, website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
@@ -383,7 +405,7 @@ def delete_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, 
 
 
 @router.post("/websites/{website_id}/reset")
-def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def reset_website(website_id: int, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> dict[str, str]:
     website = db.get(Website, website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
@@ -403,7 +425,7 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
 
 
 @router.post("/detect-company-name", summary="Detecteer bedrijfsprofiel vanaf homepage", description="Probeert bedrijfsnaam, plaats, regio en logo af te leiden uit een publieke homepage. Deze metadata wordt later hergebruikt in de UI, analyseprompts, API-responses en MCP-tools.")
-async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[str, str]:
+async def detect_company_name(url: str, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict[str, str]:
     try:
         result = await CompanyCrawler(db).detect_company_profile(url)
         log_event(db, level="info", category="website", message=f"Bedrijfsprofiel gedetecteerd voor {url}", details=result)
@@ -414,14 +436,14 @@ async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[s
 
 
 @router.post("/settings/providers/{provider}/test", summary="Test een AI-provider", description="Voert een korte providercheck uit voor OpenAI of OpenRouter met de opgeslagen configuratie. Gebruik dit na secret- of modelwijzigingen voordat scans en analyses op AI-output vertrouwen.")
-async def test_provider(provider: str, db: Session = Depends(get_db)) -> dict[str, str | bool]:
+async def test_provider(provider: str, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict[str, str | bool]:
     result = await AIService(db).test_provider(provider)
     log_event(db, level="info" if result["ok"] else "error", category="settings", message=f"{provider} provider test", details=result)
     return result
 
 
 @router.post("/scans", response_model=ScanRead, summary="Start een websitecrawl", description="Zet een crawljob in de wachtrij voor een bestaand website-record. De worker crawlt publieke same-domain pagina's en bestanden, slaat tekst en metadata op, maakt samenvattingen en embeddings, en rapporteert dode links als niet-fatale fouten wanneer mogelijk.")
-async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> dict:
+async def create_scan(payload: ScanCreate, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     website = db.get(Website, payload.website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
@@ -433,7 +455,7 @@ async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> dic
 
 
 @router.get("/scans/{scan_id}", response_model=ScanRead, summary="Lees scanstatus en opslagstatistieken", description="Geeft actuele voortgang, status, melding, verwerkte aantallen, eventuele dode links/fouten, looptijd en geschatte normale/vectoropslag terug. UI en MCP-clients gebruiken dit endpoint voor polling.")
-def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+def get_scan(scan_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -441,7 +463,7 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/scans/{scan_id}/pause", response_model=ScanRead, summary="Pauzeer een lopende scan", description="Zet een queued of running scan op paused. In-flight requests mogen netjes afronden; de worker wacht daarna totdat de scan wordt hervat of gestopt.")
-def pause_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+def pause_scan(scan_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -454,7 +476,7 @@ def pause_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/scans/{scan_id}/resume", response_model=ScanRead, summary="Hervat een gepauzeerde scan", description="Zet een paused scan terug naar queued of running, afhankelijk van of de worker al gestart was. Gebruik dit om tijdelijk crawlverkeer te beperken zonder de job weg te gooien.")
-def resume_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+def resume_scan(scan_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -467,7 +489,7 @@ def resume_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.post("/scans/{scan_id}/stop", response_model=ScanRead, summary="Stop een scan definitief", description="Markeert een queued, running of paused scan als stopped en vult de eindtijd. Gebruik reset op websiteniveau wanneer ook reeds verzamelde data verwijderd moet worden.")
-def stop_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
+def stop_scan(scan_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -481,12 +503,12 @@ def stop_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/websites/{website_id}/documents", response_model=list[DocumentRead], summary="Lijst gecrawlde documenten", description="Retourneert alle pagina's en bestanden die bij een website horen. De webconsole gebruikt dit voor de website tree, knowledge graph, inspector en vectorstatusoverzicht.")
-def list_documents(website_id: int, db: Session = Depends(get_db)) -> list[Document]:
+def list_documents(website_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> list[Document]:
     return db.query(Document).filter(Document.website_id == website_id).order_by(Document.created_at.desc()).all()
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail, summary="Lees documentdetail inclusief brontekst", description="Geeft metadata, samenvatting, vectorstatus en volledige geëxtraheerde tekst terug voor één gecrawld document. Gebruik dit alleen wanneer de volledige bron nodig is; voor lijsten is het documents-endpoint lichter.")
-def get_document(document_id: int, db: Session = Depends(get_db)) -> Document:
+def get_document(document_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> Document:
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -494,18 +516,18 @@ def get_document(document_id: int, db: Session = Depends(get_db)) -> Document:
 
 
 @router.post("/search", response_model=list[SearchResult], summary="Zoek semantisch in crawlcontent", description="Zoekt op betekenis in documentchunks en geeft bron-URL, titel, samenvatting en score terug. Dit is bedoeld voor analysevoorbereiding, vraagbeantwoording en LLM-contextselectie, niet voor letterlijke full-text export.")
-async def search(payload: SearchRequest, db: Session = Depends(get_db)) -> list[dict]:
+async def search(payload: SearchRequest, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> list[dict]:
     return await semantic_search(db, payload.query, payload.website_id, payload.limit)
 
 
 @router.get("/analysis-prompts", response_model=list[AnalysisPromptRead], summary="Lijst analyseprompts", description="Geeft de beheerbare promptketen terug waarmee de agentische bedrijfsanalyse wordt uitgevoerd. Prompts beschrijven onder meer profiel, uitdagingen, waardekansen, marktcontext en technologie-indicaties.")
-def list_analysis_prompts(db: Session = Depends(get_db)) -> list[AnalysisPrompt]:
+def list_analysis_prompts(_: User = Depends(require_api_user), db: Session = Depends(get_db)) -> list[AnalysisPrompt]:
     seed_default_analysis_prompts(db)
     return db.query(AnalysisPrompt).order_by(AnalysisPrompt.sort_order, AnalysisPrompt.prompt_id).all()
 
 
 @router.get("/analysis-prompts/{prompt_id}", response_model=AnalysisPromptRead)
-def get_analysis_prompt(prompt_id: str, db: Session = Depends(get_db)) -> AnalysisPrompt:
+def get_analysis_prompt(prompt_id: str, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> AnalysisPrompt:
     seed_default_analysis_prompts(db)
     prompt = db.get(AnalysisPrompt, prompt_id)
     if not prompt:
@@ -514,7 +536,7 @@ def get_analysis_prompt(prompt_id: str, db: Session = Depends(get_db)) -> Analys
 
 
 @router.put("/analysis-prompts/{prompt_id}", response_model=AnalysisPromptRead)
-def update_analysis_prompt(prompt_id: str, payload: AnalysisPromptUpdate, db: Session = Depends(get_db)) -> AnalysisPrompt:
+def update_analysis_prompt(prompt_id: str, payload: AnalysisPromptUpdate, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> AnalysisPrompt:
     seed_default_analysis_prompts(db)
     prompt = db.get(AnalysisPrompt, prompt_id)
     if not prompt:
@@ -527,7 +549,7 @@ def update_analysis_prompt(prompt_id: str, payload: AnalysisPromptUpdate, db: Se
 
 
 @router.post("/websites/{website_id}/analyses", response_model=AnalysisRunRead, summary="Start agentische bedrijfsanalyse", description="Maakt een analyse-run voor een website en voert de promptketen op de achtergrond uit. De analyse gebruikt websiteprofiel, samenvattingen, semantische chunks en opgeslagen modelconfiguratie om bruikbare sales- en PoC-context op te bouwen.")
-async def create_analysis(website_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
+async def create_analysis(website_id: int, background_tasks: BackgroundTasks, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     try:
         run = AnalysisService(db).create_company_analysis(website_id)
     except ValueError as exc:
@@ -538,13 +560,13 @@ async def create_analysis(website_id: int, background_tasks: BackgroundTasks, db
 
 
 @router.get("/websites/{website_id}/analyses", response_model=list[AnalysisRunRead])
-def list_analyses(website_id: int, db: Session = Depends(get_db)) -> list[dict]:
+def list_analyses(website_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> list[dict]:
     runs = db.query(AnalysisRun).filter(AnalysisRun.website_id == website_id).order_by(AnalysisRun.created_at.desc()).all()
     return [serialize_analysis_run(run) for run in runs]
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisRunRead)
-def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
+def get_analysis(analysis_id: int, _: User = Depends(require_api_user), db: Session = Depends(get_db)) -> dict:
     run = db.get(AnalysisRun, analysis_id)
     if not run:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -552,7 +574,7 @@ def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.delete("/analyses/{analysis_id}")
-def delete_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_analysis(analysis_id: int, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> dict[str, str]:
     run = db.get(AnalysisRun, analysis_id)
     if not run:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -572,7 +594,7 @@ async def _run_analysis_background(analysis_id: int) -> None:
 
 
 @router.delete("/analysis-job-results/{job_result_id}")
-def delete_analysis_job_result(job_result_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_analysis_job_result(job_result_id: int, db: Session = Depends(get_db), _: User = Depends(require_api_admin)) -> dict[str, str]:
     job_result = db.get(AnalysisJobResult, job_result_id)
     if not job_result:
         raise HTTPException(status_code=404, detail="Analysis job result not found")
@@ -588,7 +610,7 @@ def delete_analysis_job_result(job_result_id: int, db: Session = Depends(get_db)
 
 
 @router.get("/models", response_model=list[ModelConfigRead])
-async def list_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
+async def list_models(_: User = Depends(require_api_user), db: Session = Depends(get_db)) -> list[ModelConfig]:
     has_catalog = db.query(ModelConfig).count() > 0
     has_embedding_models = db.query(ModelConfig).filter(ModelConfig.purpose == "embedding").count() > 0
     has_recommendations = db.query(ModelConfig).filter(ModelConfig.is_default.is_(True)).count() > 0
@@ -598,9 +620,91 @@ async def list_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
 
 
 @router.post("/models/refresh", response_model=list[ModelConfigRead])
-async def refresh_models(db: Session = Depends(get_db)) -> list[ModelConfig]:
+async def refresh_models(_: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> list[ModelConfig]:
     await _refresh_model_catalog(db)
     return db.query(ModelConfig).order_by(ModelConfig.provider, ModelConfig.model).all()
+
+
+@router.get("/api-tokens", response_model=list[ApiTokenRead])
+def list_api_tokens(_: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> list[ApiToken]:
+    return db.query(ApiToken).order_by(ApiToken.created_at.desc(), ApiToken.id.desc()).all()
+
+
+@router.post("/api-tokens", response_model=ApiTokenCreated)
+def create_api_token(payload: ApiTokenCreate, current_user: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
+    name = payload.name.strip()
+    if db.query(ApiToken).filter(ApiToken.name == name).first():
+        raise HTTPException(status_code=409, detail="API token name already exists")
+    raw_token = create_api_token_secret()
+    item = ApiToken(
+        name=name,
+        token_hash=hash_api_token(raw_token),
+        prefix=raw_token[:12],
+        scope=validate_api_token_scope(payload.scope),
+        expires_at=payload.expires_at,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    log_event(db, level="info", category="auth", message=f"API-token aangemaakt: {item.name}", details={"actor": current_user.name, "scope": item.scope.value})
+    return {**_api_token_read(item), "token": raw_token}
+
+
+@router.patch("/api-tokens/{token_id}", response_model=ApiTokenRead)
+def update_api_token(token_id: int, payload: ApiTokenUpdate, current_user: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> ApiToken:
+    item = db.get(ApiToken, token_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="API token not found")
+    if payload.name is not None:
+        name = payload.name.strip()
+        existing = db.query(ApiToken).filter(ApiToken.name == name, ApiToken.id != token_id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="API token name already exists")
+        item.name = name
+    if payload.scope is not None:
+        item.scope = validate_api_token_scope(payload.scope)
+    if payload.is_active is not None:
+        item.is_active = payload.is_active
+    if "expires_at" in payload.model_fields_set:
+        item.expires_at = payload.expires_at
+    db.commit()
+    db.refresh(item)
+    log_event(db, level="info", category="auth", message=f"API-token bijgewerkt: {item.name}", details={"actor": current_user.name, "scope": item.scope.value, "active": item.is_active})
+    return item
+
+
+@router.delete("/api-tokens/{token_id}")
+def delete_api_token(token_id: int, current_user: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict[str, str]:
+    item = db.get(ApiToken, token_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="API token not found")
+    log_event(db, level="info", category="auth", message=f"API-token verwijderd: {item.name}", details={"actor": current_user.name})
+    db.delete(item)
+    db.commit()
+    return {"status": "deleted"}
+
+
+@router.get("/docs", include_in_schema=False)
+def protected_docs(_: User = Depends(require_api_admin)) -> HTMLResponse:
+    return get_swagger_ui_html(openapi_url="/api/openapi.json", title="companycrawler API docs")
+
+
+@router.get("/openapi.json", include_in_schema=False)
+def protected_openapi(request: Request, _: User = Depends(require_api_admin)) -> JSONResponse:
+    return JSONResponse(request.app.openapi())
+
+
+def _api_token_read(item: ApiToken) -> dict:
+    return {
+        "id": item.id,
+        "name": item.name,
+        "prefix": item.prefix,
+        "scope": item.scope.value if hasattr(item.scope, "value") else item.scope,
+        "is_active": item.is_active,
+        "expires_at": item.expires_at,
+        "created_at": item.created_at,
+        "last_used_at": item.last_used_at,
+    }
 
 
 async def _refresh_model_catalog(db: Session) -> None:

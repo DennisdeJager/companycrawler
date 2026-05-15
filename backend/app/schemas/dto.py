@@ -173,6 +173,13 @@ class UserUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class AuthConfigRead(BaseModel):
+    google_auth_enabled: bool
+    app_url_origin: str
+    google_redirect_uri: str
+    google_authorized_domains: list[str]
+
+
 class GoogleLoginRequest(BaseModel):
     credential: str
 
@@ -231,3 +238,33 @@ class AppLogRead(BaseModel):
     analysis_run_id: int | None = None
     analysis_job_result_id: int | None = None
     created_at: datetime
+
+
+class ApiTokenRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    prefix: str
+    scope: str
+    is_active: bool
+    expires_at: datetime | None = None
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    scope: str = Field(default="read")
+    expires_at: datetime | None = None
+
+
+class ApiTokenCreated(ApiTokenRead):
+    token: str
+
+
+class ApiTokenUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    scope: str | None = None
+    is_active: bool | None = None
+    expires_at: datetime | None = None

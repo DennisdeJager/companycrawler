@@ -91,6 +91,28 @@ export type ProviderSettings = {
   warnings: string[]
 }
 
+export type AuthConfig = {
+  google_auth_enabled: boolean
+  app_url_origin: string
+  google_redirect_uri: string
+  google_authorized_domains: string[]
+}
+
+export type ApiToken = {
+  id: number
+  name: string
+  prefix: string
+  scope: string
+  is_active: boolean
+  expires_at: string | null
+  created_at: string
+  last_used_at: string | null
+}
+
+export type ApiTokenCreated = ApiToken & {
+  token: string
+}
+
 export type AnalysisPrompt = {
   prompt_id: string
   title: string
@@ -159,6 +181,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string }>('/api/health'),
+  authConfig: () => request<AuthConfig>('/api/auth/config'),
   session: () => request<User>('/api/auth/session'),
   login: (credential: string) => request<User>('/api/auth/google', { method: 'POST', body: JSON.stringify({ credential }) }),
   websites: () => request<Website[]>('/api/websites'),
@@ -198,5 +221,11 @@ export const api = {
   analysis: (analysisId: number) => request<AnalysisRun>(`/api/analyses/${analysisId}`),
   deleteAnalysis: (analysisId: number) => request<{ status: string }>(`/api/analyses/${analysisId}`, { method: 'DELETE' }),
   deleteAnalysisJobResult: (jobResultId: number) => request<{ status: string }>(`/api/analysis-job-results/${jobResultId}`, { method: 'DELETE' }),
+  apiTokens: () => request<ApiToken[]>('/api/api-tokens'),
+  createApiToken: (data: { name: string; scope: string; expires_at?: string | null }) =>
+    request<ApiTokenCreated>('/api/api-tokens', { method: 'POST', body: JSON.stringify(data) }),
+  updateApiToken: (id: number, data: { name?: string; scope?: string; is_active?: boolean; expires_at?: string | null }) =>
+    request<ApiToken>(`/api/api-tokens/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteApiToken: (id: number) => request<{ status: string }>(`/api/api-tokens/${id}`, { method: 'DELETE' }),
   mcp: () => request<{ tools: { name: string; description: string }[] }>('/mcp')
 }

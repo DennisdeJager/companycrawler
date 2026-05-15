@@ -20,6 +20,9 @@ app = FastAPI(
         "context gebruiken."
     ),
     version="1.0.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
     contact={"name": "Smawa"},
     openapi_tags=[
         {"name": "default", "description": "Operationele Companycrawler API voor websites, scans, documenten, analyse, gebruikers en instellingen."},
