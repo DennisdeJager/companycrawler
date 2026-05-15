@@ -213,18 +213,27 @@ class AIService:
         response_text = await self._responses_openai(model, prompt, max_tokens)
         if response_text:
             return response_text
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_completion_tokens": max_tokens,
+            "temperature": 0.2,
+        }
         try:
             async with httpx.AsyncClient(timeout=45) as client:
                 response = await client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {self.openai_api_key}"},
-                    json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": max_tokens,
-                        "temperature": 0.2,
-                    },
+                    json=payload,
                 )
+                if response.status_code == 400 and "max_completion_tokens" in response.text and "Unsupported parameter" in response.text:
+                    fallback_payload = dict(payload)
+                    fallback_payload["max_tokens"] = fallback_payload.pop("max_completion_tokens")
+                    response = await client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {self.openai_api_key}"},
+                        json=fallback_payload,
+                    )
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"].strip()
         except httpx.HTTPStatusError as exc:
