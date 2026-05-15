@@ -775,10 +775,15 @@ function SmawaMark({ theme }: { theme: 'light' | 'dark' }) {
 
 function secondsBetween(start?: string | null, end?: string | null) {
   if (!start) return 0
-  const started = new Date(start).getTime()
-  const ended = end ? new Date(end).getTime() : Date.now()
+  const started = apiDateTime(start)
+  const ended = end ? apiDateTime(end) : Date.now()
   if (Number.isNaN(started) || Number.isNaN(ended)) return 0
   return Math.max(0, Math.floor((ended - started) / 1000))
+}
+
+function apiDateTime(value: string) {
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)
+  return new Date(hasTimezone ? value : `${value}Z`).getTime()
 }
 
 function formatDuration(totalSeconds: number) {
@@ -790,8 +795,8 @@ function formatDuration(totalSeconds: number) {
 
 function formatElapsed(start: string | null, end: string | null, now: number) {
   if (!start) return '0m 00s'
-  const started = new Date(start).getTime()
-  const ended = end ? new Date(end).getTime() : now
+  const started = apiDateTime(start)
+  const ended = end ? apiDateTime(end) : now
   if (Number.isNaN(started) || Number.isNaN(ended)) return '0m 00s'
   const totalSeconds = Math.max(0, Math.floor((ended - started) / 1000))
   const minutes = Math.floor(totalSeconds / 60)
