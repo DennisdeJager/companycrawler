@@ -178,6 +178,9 @@ h1 { margin: 0; font-size: 25px; line-height: 1.15; letter-spacing: 0; }
   gap: 14px;
   align-items: start;
 }
+.single-panel-layout {
+  width: min(760px, 100%);
+}
 .knowledge-layout {
   display: grid;
   grid-template-columns: minmax(620px, 1fr) minmax(320px, 0.42fr);

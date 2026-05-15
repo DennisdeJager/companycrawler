@@ -684,7 +684,8 @@ function ProgressPanel({
   pauseScan,
   stopScan,
   resetSelected,
-  selectedWebsite
+  selectedWebsite,
+  activeModel
 }: {
   scan: Scan | null
   documents: DocumentItem[]
@@ -694,6 +695,7 @@ function ProgressPanel({
   stopScan: () => void
   resetSelected?: () => void
   selectedWebsite?: Website | null
+  activeModel?: ModelConfig
 }) {
   const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
   const elapsedSeconds = scan ? scan.duration_seconds || secondsBetween(scan.started_at ?? scan.created_at, scan.completed_at) : 0
@@ -707,6 +709,7 @@ function ProgressPanel({
       {scan?.error && <pre className="scan-error">{scan.error}</pre>}
       <div className="meter"><span style={{ width: `${scan?.progress ?? 0}%` }} /></div>
       <dl>
+        {activeModel && <><dt>Model</dt><dd>{activeModel.provider} · {activeModel.model}</dd></>}
         <dt>Items gevonden</dt><dd>{scan?.items_found ?? documents.length}</dd>
         <dt>Items verwerkt</dt><dd>{scan?.items_processed ?? documents.length}</dd>
         <dt>Vectorstatus</dt><dd>{documents.filter((doc) => doc.vector_status === 'ready').length}/{documents.length} klaar</dd>
@@ -932,24 +935,17 @@ function ScansView({
   pauseScan: () => void
   stopScan: () => void
 }) {
-  const canPause = scan ? ['queued', 'running'].includes(scan.status) : false
-  const canStop = scan ? ['queued', 'running', 'paused'].includes(scan.status) : false
   return (
-    <section className="split-layout">
-      <ProgressPanel scan={scan} documents={[]} message={message} startScan={startScan} pauseScan={pauseScan} stopScan={stopScan} />
-      <div className="panel">
-        <div className="panel-title"><Play size={18} /> Scan bediening</div>
-        <p className="body-text">Start een scan voor de actieve website. De voortgang verschijnt direct op Dashboard en hier.</p>
-        <dl>
-          <dt>Model</dt><dd>{activeModel ? `${activeModel.provider} · ${activeModel.model}` : 'Geen model geladen'}</dd>
-          <dt>Status</dt><dd>{scan?.status ?? 'idle'}</dd>
-        </dl>
-        <div className="scan-control-row inline">
-          <button className="primary" onClick={startScan}><Play size={17} /> Start</button>
-          <button className="secondary" onClick={pauseScan} disabled={!canPause}><Pause size={17} /> Pauze</button>
-          <button className="danger" onClick={stopScan} disabled={!canStop}><Square size={16} /> Stop</button>
-        </div>
-      </div>
+    <section className="single-panel-layout">
+      <ProgressPanel
+        scan={scan}
+        documents={[]}
+        message={message}
+        startScan={startScan}
+        pauseScan={pauseScan}
+        stopScan={stopScan}
+        activeModel={activeModel}
+      />
     </section>
   )
 }
