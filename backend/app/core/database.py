@@ -54,6 +54,9 @@ def _upgrade_schema() -> None:
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_websites_region ON websites (region)"))
             connection.execute(text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS text_hash VARCHAR(64) NOT NULL DEFAULT ''"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_documents_text_hash ON documents (text_hash)"))
+            connection.execute(text("ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS auto_analyze BOOLEAN NOT NULL DEFAULT false"))
+            connection.execute(text("ALTER TABLE scan_jobs ADD COLUMN IF NOT EXISTS analysis_run_id INTEGER"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_scan_jobs_analysis_run_id ON scan_jobs (analysis_run_id)"))
     elif engine.dialect.name == "sqlite":
         with engine.begin() as connection:
             website_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(websites)"))]
@@ -66,6 +69,11 @@ def _upgrade_schema() -> None:
             document_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(documents)"))]
             if "text_hash" not in document_columns:
                 connection.execute(text("ALTER TABLE documents ADD COLUMN text_hash VARCHAR(64) NOT NULL DEFAULT ''"))
+            scan_columns = [row[1] for row in connection.execute(text("PRAGMA table_info(scan_jobs)"))]
+            if "auto_analyze" not in scan_columns:
+                connection.execute(text("ALTER TABLE scan_jobs ADD COLUMN auto_analyze BOOLEAN NOT NULL DEFAULT 0"))
+            if "analysis_run_id" not in scan_columns:
+                connection.execute(text("ALTER TABLE scan_jobs ADD COLUMN analysis_run_id INTEGER"))
 
 
 def _content_hash(text_value: str) -> str:

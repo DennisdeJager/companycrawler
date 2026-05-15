@@ -34,19 +34,43 @@ De API-route `/api/detect-company-name` probeert deze velden uit de homepage af 
 - Autorisatie: API token met minimaal `read`.
 - Foutgedrag: operationele fouten komen als standaard MCP JSON-RPC error terug.
 
+### upsert_website
+
+- Doel: maakt een nieuw website-record aan of werkt een bestaand record met dezelfde URL bij. Wanneer metadata ontbreekt kan de homepage worden gebruikt om bedrijfsnaam, plaats, regio en logo te detecteren.
+- Inputschema: `{ "url": string, "company_name"?: string, "company_place"?: string, "region"?: string, "logo_url"?: string, "detect_profile"?: boolean }`
+- Outputschema: `{ "created": boolean, "website": { "id": number, "url": string, "company_name": string, "company_place": string, "region": string, "logo_url": string, "created_at": datetime, "updated_at": datetime }, "profile_detection_error"?: string }`
+- Autorisatie: API token met minimaal `execute`.
+- Foutgedrag: ontbrekende of ongeldige URL geeft een MCP JSON-RPC error. Als profieldetectie faalt maar er voldoende fallbackmetadata is, wordt het record toch aangemaakt en staat de fout in `profile_detection_error`.
+
 ### start_scan
 
 - Doel: zet een publieke same-domain crawl in de wachtrij voor een bestaand website-record.
 - Inputschema: `{ "website_id": number }`
-- Outputschema: `{ "id": number, "status": string, "progress": number, "message": string, "error": string }`
+- Outputschema: `{ "id": number, "website_id": number, "status": string, "progress": number, "message": string, "error": string, "auto_analyze": boolean, "analysis_run_id": number | null }`
 - Autorisatie: API token met minimaal `execute`.
 - Foutgedrag: `{ "error": "Website not found" }` wanneer de website niet bestaat. Dode links verschijnen later in `error` van de scanstatus.
+
+### scan_and_analyze_website
+
+- Doel: maakt of update een website-record, zet direct een scan in de wachtrij en markeert deze scan zodat de worker na succesvolle afronding automatisch de bedrijfsanalyse start.
+- Inputschema: `{ "url": string, "company_name"?: string, "company_place"?: string, "region"?: string, "logo_url"?: string, "detect_profile"?: boolean }`
+- Outputschema: `{ "website": object, "scan": { "id": number, "website_id": number, "status": string, "progress": number, "message": string, "auto_analyze": true, "analysis_run_id": number | null }, "analysis": null, "profile_detection_error"?: string }`
+- Autorisatie: API token met minimaal `execute`.
+- Foutgedrag: ontbrekende of ongeldige URL geeft een MCP JSON-RPC error. Profieldetectiefouten blokkeren de scan niet wanneer een veilige fallback beschikbaar is.
 
 ### get_scan_status
 
 - Doel: leest voortgang, status, workerbericht en eventuele crawlproblemen zoals dode links of fatale fouten.
 - Inputschema: `{ "scan_id": number }`
-- Outputschema: `{ "id": number, "status": string, "progress": number, "message": string, "error": string }`
+- Outputschema: `{ "id": number, "website_id": number, "status": string, "progress": number, "message": string, "error": string, "auto_analyze": boolean, "analysis_run_id": number | null }`
+- Autorisatie: API token met minimaal `read`.
+- Foutgedrag: `{ "error": "Scan not found" }` wanneer de scan niet bestaat.
+
+### get_scan_analysis_status
+
+- Doel: geeft één pollbaar statusscherm voor de volledige workflow uit `scan_and_analyze_website`: websiteprofiel, scanstatus, gekoppelde of laatste analyse-run en een `ready` vlag.
+- Inputschema: `{ "scan_id": number }`
+- Outputschema: `{ "website": object, "scan": object, "analysis": AnalysisRunRead | null, "ready": boolean }`
 - Autorisatie: API token met minimaal `read`.
 - Foutgedrag: `{ "error": "Scan not found" }` wanneer de scan niet bestaat.
 

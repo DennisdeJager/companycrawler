@@ -34,6 +34,7 @@ class WebsiteRead(BaseModel):
 
 class ScanCreate(BaseModel):
     website_id: int = Field(description="ID van het website-record waarvoor een crawljob in de wachtrij wordt gezet.")
+    auto_analyze: bool = Field(default=False, description="Start automatisch een bedrijfsanalyse nadat de scan succesvol is afgerond.")
 
 
 class ScanRead(BaseModel):
@@ -54,6 +55,8 @@ class ScanRead(BaseModel):
     normal_db_size_mb: float = Field(default=0, description="Geschatte opslagruimte voor documentmetadata, tekst en samenvattingen in MB.")
     vector_db_size_mb: float = Field(default=0, description="Geschatte opslagruimte voor chunks en embeddings in MB.")
     scan_max_parallel_items: int = Field(default=1, description="Aantal parallelle crawlverwerkingen dat voor deze omgeving is geconfigureerd.")
+    auto_analyze: bool = Field(default=False, description="Geeft aan of de worker na een succesvolle scan automatisch een analyse start.")
+    analysis_run_id: int | None = Field(default=None, description="Analyse-run die door deze scan is gestart, indien beschikbaar.")
 
 
 class DocumentRead(BaseModel):

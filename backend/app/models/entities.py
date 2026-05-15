@@ -83,6 +83,8 @@ class ScanJob(Base):
     items_found: Mapped[int] = mapped_column(Integer, default=0)
     items_processed: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")
+    auto_analyze: Mapped[bool] = mapped_column(Boolean, default=False)
+    analysis_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] MCP-flow toegevoegd voor website upsert, scan starten met automatische analyse en gecombineerde scan/analyse-statuspolling.
 - [x] API- en MCP-routes afgeschermd met sessie-auth, RBAC, hashed Bearer tokens, MCP-scopes en admin-tokenbeheer.
 - [x] Scan- en notificatiefouten sluitbaar gemaakt met automatische verwijdering na 30 seconden; knowledge graph opent standaard tot niveau 2; API- en MCP-documentatie uitgebreid.
 - [x] Reset data-knop toegevoegd aan websitebeheer; reset verwijdert nu scan-, crawl-, vector- en analysedata per website.

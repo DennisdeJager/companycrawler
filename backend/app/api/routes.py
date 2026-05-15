@@ -164,6 +164,8 @@ def serialize_scan(db: Session, scan: ScanJob) -> dict:
         "normal_db_size_mb": normal_db_size_mb,
         "vector_db_size_mb": vector_db_size_mb,
         "scan_max_parallel_items": get_settings().scan_max_parallel_items,
+        "auto_analyze": scan.auto_analyze,
+        "analysis_run_id": scan.analysis_run_id,
     }
 
 
@@ -447,7 +449,7 @@ async def create_scan(payload: ScanCreate, _: User = Depends(require_api_user), 
     website = db.get(Website, payload.website_id)
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
-    scan = ScanJob(website_id=website.id)
+    scan = ScanJob(website_id=website.id, auto_analyze=payload.auto_analyze)
     db.add(scan)
     db.commit()
     db.refresh(scan)

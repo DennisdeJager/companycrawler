@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.models import ContentChunk, Document, ScanJob, Website
 from app.models.entities import ScanStatus
 from app.services.ai import AIService, embedding_to_json
+from app.services.analysis import AnalysisService
 
 
 SUPPORTED_FILE_EXTENSIONS = {".pdf", ".docx", ".txt", ".csv", ".json", ".md"}
@@ -95,12 +96,22 @@ class CompanyCrawler:
                 scan.message = "Scan afgerond"
             scan.completed_at = datetime.utcnow()
             self.db.commit()
+            if scan.auto_analyze:
+                await self._run_followup_analysis(scan, website)
         except Exception as exc:
             scan.status = ScanStatus.failed
             scan.error = str(exc)
             scan.message = "Scan mislukt"
             scan.completed_at = datetime.utcnow()
             self.db.commit()
+
+    async def _run_followup_analysis(self, scan: ScanJob, website: Website) -> None:
+        scan.message = "Scan afgerond, analyse gestart"
+        self.db.commit()
+        run = await AnalysisService(self.db).run_company_analysis(website.id)
+        scan.analysis_run_id = run.id
+        scan.message = "Scan en analyse afgerond" if run.status == "completed" else "Scan afgerond, analyse mislukt"
+        self.db.commit()
 
     async def _crawl_website(self, website: Website, scan: ScanJob) -> None:
         root = self._canonical_url(website.url)
