@@ -17,7 +17,7 @@ docker compose up --build -d
       "composeFile": "docker-compose.yml",
       "services": ["db", "api", "worker", "web"],
       "postDeployWaitSeconds": 25,
-      "healthUrls": ["http://192.168.10.12:8080/api/health"],
+      "healthUrls": ["http://192.168.10.12:31004/api/health"],
       "readyUrls": ["http://192.168.10.12:8080/mcp"],
       "postDeployChecks": []
     }
@@ -29,7 +29,7 @@ Services:
 
 - `api`: FastAPI op poort `8000`
 - `worker`: achtergrondverwerker voor scans
-- `web`: nginx met React build op poort `8080` of `WEB_PORT`
+- `web`: nginx met React build op poort `31004` via GitHub Actions `WEB_PORT`, of lokaal `8080` wanneer `WEB_PORT` niet is gezet
 - `db`: PostgreSQL met pgvector
 
 ## Caddy mapping
@@ -74,3 +74,5 @@ Na elke code change:
 2. Commit en push naar GitHub.
 3. Dev container opnieuw deployen.
 4. Caddy reloaden indien mapping is gewijzigd.
+
+De GitHub Actions dev-deploy gebruikt dezelfde dev-container, compose projectnaam `companycrawler-dev` en poort `31004`. Omdat de historische `/opt/capps/apps/companycrawler` map deels root-owned kan zijn, schrijft de workflow de bronbestanden naar de user-writable map `capps/apps/companycrawler` van de deploy-user en start daar `docker compose` met dezelfde projectnaam.
