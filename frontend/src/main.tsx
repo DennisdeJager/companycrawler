@@ -36,12 +36,12 @@ import {
 } from 'lucide-react'
 import smawaLogoDark from './assets/smawa-logo-light-transparent.png'
 import smawaLogoLight from './assets/smawa-logo-background-white.png'
-import { api, AppLog, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
+import { api, ApiToken, AppLog, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'Users' | 'Settings'
-type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts' | 'logs'
+type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts' | 'tokens' | 'logs'
 type NotificationState = { tone: 'success' | 'error' | 'info'; text: string } | null
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
@@ -158,8 +158,8 @@ function App() {
     const [websiteRows, modelRows, userRows, providerSettings, promptRows] = await Promise.all([
       api.websites(),
       api.models(),
-      api.users().catch(() => []),
-      api.providerSettings(),
+      activeUser?.role === 'admin' ? api.users().catch(() => []) : Promise.resolve([]),
+      activeUser?.role === 'admin' ? api.providerSettings() : Promise.resolve(settings),
       api.analysisPrompts()
     ])
     setWebsites(websiteRows)
@@ -199,10 +199,16 @@ function App() {
   }
 
   useEffect(() => {
-    api.providerSettings()
-      .then(async (providerSettings) => {
-        setSettings(providerSettings)
-        if (!providerSettings.google_auth_enabled) {
+    api.authConfig()
+      .then(async (authSettings) => {
+        setSettings((current) => ({
+          ...current,
+          google_auth_enabled: authSettings.google_auth_enabled,
+          app_url_origin: authSettings.app_url_origin,
+          google_redirect_uri: authSettings.google_redirect_uri,
+          google_authorized_domains: authSettings.google_authorized_domains
+        }))
+        if (!authSettings.google_auth_enabled) {
           notify('info', 'Google login is nog niet geconfigureerd.')
           return undefined
         }
@@ -579,7 +585,7 @@ function App() {
           <SmawaMark theme={theme} />
         </div>
         <nav>
-          {nav.map(({ label, icon: Icon }) => (
+          {nav.filter((item) => user.role === 'admin' || !['Users', 'Settings', 'API Docs'].includes(item.label)).map(({ label, icon: Icon }) => (
             <button className={view === label ? 'active' : ''} key={label} onClick={() => setView(label)}>
               <Icon size={17} />{label}
             </button>
@@ -1566,9 +1572,9 @@ function DocsView() {
   return (
     <section className="panel docs-panel wide">
       <div className="panel-title"><BookOpen size={18} /> API documentatie</div>
-      <p className="body-text">De REST API is de operationele laag achter websites, scans, documenten, semantisch zoeken, analyses, gebruikers en instellingen. Swagger bevat per endpoint context over doel, databetekenis, foutgedrag en hoe UI en MCP dezelfde businessregels gebruiken.</p>
-      <a href="/docs" target="_blank">Swagger UI openen</a>
-      <a href="/openapi.json" target="_blank">OpenAPI JSON openen</a>
+      <p className="body-text">De REST API is afgeschermd met sessie-authenticatie en Bearer tokens. Swagger is alleen beschikbaar voor beheerders.</p>
+      <a href="/api/docs" target="_blank">Swagger UI openen</a>
+      <a href="/api/openapi.json" target="_blank">OpenAPI JSON openen</a>
       <code>POST /api/scans</code>
       <code>GET /api/websites/{'{website_id}'}/documents</code>
       <code>POST /api/search</code>
@@ -1580,8 +1586,8 @@ function McpView() {
   return (
     <section className="panel docs-panel wide">
       <div className="panel-title"><Cable size={18} /> MCP server</div>
-      <p className="body-text">De MCP-server ontsluit crawl- en analysedata als LLM-tools. Gebruik eerst `list_websites`, daarna scans/status of semantische zoekopdrachten, en haal bestaande analyse-runs op voordat je nieuwe AI-kosten maakt.</p>
-      <a href="/mcp" target="_blank">MCP manifest openen</a>
+      <p className="body-text">De MCP-server ontsluit crawl- en analysedata als LLM-tools. Gebruik altijd een API token met Bearer-authenticatie; browsercookies worden voor MCP niet geaccepteerd.</p>
+      <code>Authorization: Bearer &lt;token&gt;</code>
       <code>POST /mcp</code>
       <code>{'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"client","version":"1.0.0"}}}'}</code>
       <code>{'{"jsonrpc":"2.0","id":2,"method":"tools/list"}'}</code>
@@ -1770,6 +1776,9 @@ function SettingsView({
         <button className={activeTab === 'prompts' ? 'active' : ''} onClick={() => setActiveTab('prompts')} type="button">
           <ClipboardList size={16} /> Promptbeheer
         </button>
+        <button className={activeTab === 'tokens' ? 'active' : ''} onClick={() => setActiveTab('tokens')} type="button">
+          <KeyRound size={16} /> API & MCP tokens
+        </button>
         <button className={activeTab === 'logs' ? 'active' : ''} onClick={() => setActiveTab('logs')} type="button">
           <FileText size={16} /> Logging
         </button>
@@ -1882,11 +1891,156 @@ function SettingsView({
         </div>
       )}
 
+      {activeTab === 'tokens' && (
+        <div className="settings-tab-body">
+          <ApiTokenManager onNotify={onNotify} />
+        </div>
+      )}
+
       {activeTab === 'logs' && (
         <div className="settings-tab-body">
           <LogManager onNotify={onNotify} />
         </div>
       )}
+    </section>
+  )
+}
+
+function ApiTokenManager({ onNotify }: { onNotify: (tone: NonNullable<NotificationState>['tone'], text: string) => void }) {
+  const [tokens, setTokens] = useState<ApiToken[]>([])
+  const [name, setName] = useState('')
+  const [scope, setScope] = useState('read')
+  const [expiresAt, setExpiresAt] = useState('')
+  const [createdToken, setCreatedToken] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function loadTokens() {
+    setLoading(true)
+    try {
+      setTokens(await api.apiTokens())
+    } catch (error) {
+      onNotify('error', `API tokens laden mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function createToken() {
+    if (!name.trim()) return
+    try {
+      const created = await api.createApiToken({
+        name: name.trim(),
+        scope,
+        expires_at: expiresAt ? new Date(expiresAt).toISOString() : null
+      })
+      setTokens((rows) => [created, ...rows])
+      setCreatedToken(created.token)
+      setName('')
+      setExpiresAt('')
+      onNotify('success', 'API token aangemaakt. Bewaar de token nu; hij wordt niet opnieuw getoond.')
+    } catch (error) {
+      onNotify('error', `API token aanmaken mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function updateToken(item: ApiToken, changes: Partial<ApiToken>) {
+    try {
+      const updated = await api.updateApiToken(item.id, {
+        name: changes.name,
+        scope: changes.scope,
+        is_active: changes.is_active,
+        expires_at: changes.expires_at
+      })
+      setTokens((rows) => rows.map((row) => (row.id === updated.id ? updated : row)))
+      onNotify('success', 'API token bijgewerkt.')
+    } catch (error) {
+      onNotify('error', `API token bijwerken mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function deleteToken(item: ApiToken) {
+    if (!window.confirm(`API token "${item.name}" verwijderen?`)) return
+    try {
+      await api.deleteApiToken(item.id)
+      setTokens((rows) => rows.filter((row) => row.id !== item.id))
+      onNotify('success', 'API token verwijderd.')
+    } catch (error) {
+      onNotify('error', `API token verwijderen mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(loadTokens, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  return (
+    <section className="token-panel">
+      <div className="panel-heading-row">
+        <div className="panel-title"><KeyRound size={18} /> API & MCP tokens</div>
+        <button className="secondary" onClick={loadTokens} disabled={loading}><RefreshCw size={16} /> Verversen</button>
+      </div>
+      <p className="body-text">Gebruik Bearer tokens voor externe REST- en MCP-clients. MCP accepteert alleen deze tokens, geen browsercookie.</p>
+      <div className="token-create-grid">
+        <div>
+          <label>Naam</label>
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Bijvoorbeeld ChatGPT MCP client" />
+        </div>
+        <div>
+          <label>Scope</label>
+          <select value={scope} onChange={(event) => setScope(event.target.value)}>
+            <option value="read">Read</option>
+            <option value="execute">Execute</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div>
+          <label>Verloopt op</label>
+          <input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
+        </div>
+        <button className="primary" onClick={createToken} disabled={!name.trim()}><Plus size={17} /> Nieuw token</button>
+      </div>
+      {createdToken && (
+        <div className="token-secret-box">
+          <strong>Nieuwe token, alleen nu zichtbaar</strong>
+          <code>{createdToken}</code>
+        </div>
+      )}
+      <div className="token-help">
+        <code>Authorization: Bearer &lt;token&gt;</code>
+        <code>POST /mcp</code>
+      </div>
+      <div className="token-table">
+        <div className="token-row token-header">
+          <span>Naam</span>
+          <span>Prefix</span>
+          <span>Scope</span>
+          <span>Status</span>
+          <span>Laatst gebruikt</span>
+          <span>Acties</span>
+        </div>
+        {tokens.map((item) => (
+          <div className="token-row" key={item.id}>
+            <span>{item.name}</span>
+            <span><code>{item.prefix}</code></span>
+            <span>
+              <select value={item.scope} onChange={(event) => updateToken(item, { scope: event.target.value })}>
+                <option value="read">read</option>
+                <option value="execute">execute</option>
+                <option value="admin">admin</option>
+              </select>
+            </span>
+            <span>{item.is_active ? 'Actief' : 'Inactief'}{item.expires_at ? ` tot ${new Date(item.expires_at).toLocaleString()}` : ''}</span>
+            <span>{item.last_used_at ? new Date(item.last_used_at).toLocaleString() : 'Nog niet gebruikt'}</span>
+            <span className="button-row token-actions">
+              <button className="secondary" onClick={() => updateToken(item, { is_active: !item.is_active })}>{item.is_active ? 'Intrekken' : 'Activeren'}</button>
+              <button className="danger" onClick={() => deleteToken(item)}><Trash2 size={16} /> Verwijderen</button>
+            </span>
+          </div>
+        ))}
+        {!loading && tokens.length === 0 && <p className="empty">Nog geen API tokens. Maak een token aan voor externe API- of MCP-clients.</p>}
+        {loading && <p className="empty">API tokens laden...</p>}
+      </div>
     </section>
   )
 }
