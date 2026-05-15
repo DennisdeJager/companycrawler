@@ -14,6 +14,13 @@ from app.services.search import semantic_search
 
 router = APIRouter(prefix="/mcp", tags=["MCP"])
 MCP_PROTOCOL_VERSION = "2025-06-18"
+SERVER_CONTEXT = (
+    "Companycrawler verzamelt publieke websitecontent om bedrijfsprofielen, pagina-/bestandsstructuur, "
+    "samenvattingen, embeddings en agentische analyses beschikbaar te maken voor salesvoorbereiding, "
+    "marktverkenning en PoC-briefings. Tools lezen of starten dezelfde workflows als de REST API: scans "
+    "blijven same-domain, dode links worden als scanmelding teruggegeven, semantische zoekresultaten zijn "
+    "bedoeld als compacte LLM-context, en analyses bouwen voort op de gecrawlde documenten en beheerbare prompts."
+)
 
 
 def _tool_descriptors() -> list[dict[str, Any]]:
@@ -21,7 +28,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "list_websites",
             "title": "List websites",
-            "description": "List known company websites and their marketing profile metadata.",
+            "description": "List known company websites with the profile metadata that anchors later scans, search and analyses. Use this first to pick a website_id.",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
             "outputSchema": {
                 "type": "object",
@@ -34,9 +41,11 @@ def _tool_descriptors() -> list[dict[str, Any]]:
                                 "id": {"type": "integer"},
                                 "url": {"type": "string"},
                                 "company_name": {"type": "string"},
+                                "company_place": {"type": "string"},
+                                "region": {"type": "string"},
                                 "logo_url": {"type": "string"},
                             },
-                            "required": ["id", "url", "company_name", "logo_url"],
+                            "required": ["id", "url", "company_name", "company_place", "region", "logo_url"],
                         },
                     }
                 },
@@ -47,7 +56,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "start_scan",
             "title": "Start website scan",
-            "description": "Queue a public same-domain crawl for an existing website id.",
+            "description": "Queue a public same-domain crawl for an existing website id. The worker extracts pages/files, summaries and embeddings; broken URLs are reported as scan errors but do not always fail the whole scan.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"website_id": {"type": "integer", "minimum": 1}},
@@ -65,7 +74,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "get_scan_status",
             "title": "Get scan status",
-            "description": "Return scan progress, status and latest worker message.",
+            "description": "Return scan progress, status, latest worker message and any current error text such as dead links or fatal crawl failures. Poll this after start_scan.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"scan_id": {"type": "integer", "minimum": 1}},
@@ -78,7 +87,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "search_company_data",
             "title": "Search company data",
-            "description": "Semantic search over crawled public company website content.",
+            "description": "Semantic search over crawled public company website content. Use this to retrieve compact, source-linked context for a question before drafting analysis, scenarios or PoC material.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -99,7 +108,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "get_company_profile",
             "title": "Get company profile",
-            "description": "Return website metadata and known document summaries for a company.",
+            "description": "Return website metadata and known document summaries for a company. This is the broad context snapshot for an LLM client before deeper search or analysis retrieval.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"website_id": {"type": "integer", "minimum": 1}},
@@ -122,7 +131,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "list_analysis_prompts",
             "title": "List analysis prompts",
-            "description": "List manageable default prompts for the company analysis agent jobs.",
+            "description": "List manageable prompts for the company analysis jobs, including the purpose of each step in the chain. Admins can adjust these prompts through the application settings.",
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
             "outputSchema": {"type": "object", "properties": {"prompts": {"type": "array", "items": {"type": "object"}}}, "required": ["prompts"]},
             "annotations": {"readOnlyHint": True, "destructiveHint": False, "openWorldHint": False},
@@ -130,7 +139,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "run_company_analysis",
             "title": "Run company analysis",
-            "description": "Run the 9-step agentic company analysis chain for a website.",
+            "description": "Run the agentic company analysis chain for a website. The chain uses website metadata, crawl summaries and semantic chunks to extract profile variables, challenges, value opportunities, market context and technology hooks.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"website_id": {"type": "integer", "minimum": 1}},
@@ -143,7 +152,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "get_company_analysis",
             "title": "Get company analysis",
-            "description": "Return a stored company analysis run with all job results.",
+            "description": "Return a stored company analysis run with all job results, extracted variables, summaries, sources and provider errors. Use this instead of rerunning analysis when a recent run exists.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"analysis_id": {"type": "integer", "minimum": 1}},
@@ -156,7 +165,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "generate_company_scenarios",
             "title": "Generate company scenarios",
-            "description": "Return scenario-ready opportunities from the latest stored company analysis.",
+            "description": "Return scenario-ready opportunities from the latest stored company analysis. This tool reshapes analysis jobs into practical directions for solution discovery or customer conversations.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"website_id": {"type": "integer", "minimum": 1}},
@@ -169,7 +178,7 @@ def _tool_descriptors() -> list[dict[str, Any]]:
         {
             "name": "generate_poc_brief",
             "title": "Generate PoC brief",
-            "description": "Return a PoC briefing based on the latest stored company analysis.",
+            "description": "Return a PoC briefing based on the latest stored company analysis, including company profile, challenges, value opportunities and technical hooks for a first proposal.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"website_id": {"type": "integer", "minimum": 1}},
@@ -190,6 +199,7 @@ def _scan_output_schema() -> dict[str, Any]:
             "status": {"type": "string"},
             "progress": {"type": "integer"},
             "message": {"type": "string"},
+            "error": {"type": "string"},
         },
         "required": ["id", "status", "progress", "message"],
     }
@@ -200,11 +210,17 @@ def manifest() -> dict:
     tools = _tool_descriptors()
     return {
         "name": "companycrawler",
-        "description": "MCP tools for scanning public company websites and retrieving marketing profile data.",
+        "description": SERVER_CONTEXT,
         "protocol": "MCP",
         "protocol_version": MCP_PROTOCOL_VERSION,
         "transport": "streamable-http-json-rpc",
         "jsonrpc_endpoint": "/mcp",
+        "data_context": {
+            "purpose": "Publieke websitecontent omzetten naar betrouwbare bedrijfscontext voor analyse, salesvoorbereiding en PoC-briefings.",
+            "sources": ["Gecrawlde same-domain pagina's", "Publieke bestanden", "AI-samenvattingen", "Embeddings", "Opgeslagen analysejobs"],
+            "analysis_context": "De analyse combineert gedetecteerde bedrijfsmetadata, documentensamenvattingen en relevante semantische chunks. Resultaten zijn ondersteunende analysecontext en moeten bij klantcommunicatie tegen de bronpagina's worden gecontroleerd.",
+            "privacy": "De crawler is bedoeld voor publieke website-informatie. Secrets en providerconfiguratie worden niet via MCP teruggegeven.",
+        },
         "capabilities": {"tools": {"listChanged": False}},
         "tools": tools,
     }
@@ -235,7 +251,7 @@ async def _handle_json_rpc(payload: dict[str, Any], db: Session) -> dict[str, An
             "protocolVersion": requested_version or MCP_PROTOCOL_VERSION,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": "companycrawler", "title": "Companycrawler", "version": "1.0.0"},
-            "instructions": "Use these tools to inspect public website crawl data, start scans, and search marketing profiles.",
+            "instructions": SERVER_CONTEXT,
         }
     if method == "notifications/initialized":
         return None
@@ -335,7 +351,19 @@ def _jsonable(value: Any) -> Any:
 
 @router.post("/tools/list_websites")
 def list_websites(db: Session = Depends(get_db)) -> dict:
-    return {"websites": [{"id": item.id, "url": item.url, "company_name": item.company_name, "logo_url": item.logo_url} for item in db.query(Website).all()]}
+    return {
+        "websites": [
+            {
+                "id": item.id,
+                "url": item.url,
+                "company_name": item.company_name,
+                "company_place": item.company_place,
+                "region": item.region,
+                "logo_url": item.logo_url,
+            }
+            for item in db.query(Website).all()
+        ]
+    }
 
 
 @router.post("/tools/start_scan")
@@ -347,7 +375,7 @@ def start_scan(website_id: int, db: Session = Depends(get_db)) -> dict:
     db.add(scan)
     db.commit()
     db.refresh(scan)
-    return {"id": scan.id, "status": scan.status, "progress": scan.progress, "message": scan.message}
+    return {"id": scan.id, "status": scan.status, "progress": scan.progress, "message": scan.message, "error": scan.error}
 
 
 @router.post("/tools/get_scan_status")
@@ -355,7 +383,7 @@ def get_scan_status(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
         return {"error": "Scan not found"}
-    return {"id": scan.id, "status": scan.status, "progress": scan.progress, "message": scan.message}
+    return {"id": scan.id, "status": scan.status, "progress": scan.progress, "message": scan.message, "error": scan.error}
 
 
 @router.post("/tools/search_company_data")

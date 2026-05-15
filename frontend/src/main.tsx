@@ -824,16 +824,29 @@ function ProgressPanel({
   selectedWebsite?: Website | null
   activeModel?: ModelConfig
 }) {
-  const statusText = scan?.status === 'failed' ? scan.error || scan.message : scan?.message ?? message
+  const [hiddenErrorKey, setHiddenErrorKey] = useState('')
+  const scanErrorKey = scan?.error ? `${scan.id}:${scan.error}` : ''
+  const showScanError = Boolean(scan?.error && hiddenErrorKey !== scanErrorKey)
+  const statusText = scan?.status === 'failed' ? (showScanError ? scan.error || scan.message : scan.message) : scan?.message ?? message
   const elapsedSeconds = scan ? scan.duration_seconds || secondsBetween(scan.started_at ?? scan.created_at, scan.completed_at) : 0
   const canPause = scan ? ['queued', 'running'].includes(scan.status) : false
   const canStop = scan ? ['queued', 'running', 'paused'].includes(scan.status) : false
+  useEffect(() => {
+    if (!scanErrorKey) return undefined
+    const timer = window.setTimeout(() => setHiddenErrorKey(scanErrorKey), 30000)
+    return () => window.clearTimeout(timer)
+  }, [scanErrorKey])
   return (
     <div className={scan?.status === 'running' ? 'panel progress-panel scanning' : 'panel progress-panel'}>
       <div className="panel-title"><Activity size={18} /> Realtime scan voortgang</div>
       <div className="progress-ring">{scan?.progress ?? 0}%</div>
       <div className="status-line">{scan?.status ?? 'idle'} · {statusText}</div>
-      {scan?.error && <pre className="scan-error">{scan.error}</pre>}
+      {showScanError && (
+        <div className="scan-error">
+          <button className="icon-button scan-error-close" onClick={() => setHiddenErrorKey(scanErrorKey)} title="Foutmelding sluiten" aria-label="Foutmelding sluiten"><X size={14} /></button>
+          <pre>{scan?.error}</pre>
+        </div>
+      )}
       <div className="meter"><span style={{ width: `${scan?.progress ?? 0}%` }} /></div>
       <dl>
         {activeModel && <><dt>Model</dt><dd>{activeModel.provider} · {activeModel.model}</dd></>}
@@ -1117,9 +1130,14 @@ type MindEdge = {
 
 function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: DocumentItem | null; selectedWebsite: Website | null; setSelectedDocument: (doc: DocumentItem) => void }) {
   const [detail, setDetail] = useState<DocumentDetail | null>(null)
-  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set())
+  const structureKey = `${props.selectedWebsite?.id ?? 'none'}:${props.documents.map((document) => document.id).join(',')}`
+  const [collapseState, setCollapseState] = useState<{ key: string; ids: Set<string> }>(() => ({
+    key: structureKey,
+    ids: defaultSecondLevelCollapsedIds(props.documents)
+  }))
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 0.88 })
   const dragRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
+  const collapsedNodeIds = collapseState.key === structureKey ? collapseState.ids : defaultSecondLevelCollapsedIds(props.documents)
   const graph = useMemo(() => buildMindmap(props.documents, props.selectedWebsite, collapsedNodeIds), [props.documents, props.selectedWebsite, collapsedNodeIds])
 
   const toggleNode = (node: MindNode) => {
@@ -1128,11 +1146,12 @@ function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: Doc
       return
     }
     if (!node.canCollapse) return
-    setCollapsedNodeIds((current) => {
-      const next = new Set(current)
+    setCollapseState((current) => {
+      const currentIds = current.key === structureKey ? current.ids : defaultSecondLevelCollapsedIds(props.documents)
+      const next = new Set(currentIds)
       if (next.has(node.id)) next.delete(node.id)
       else next.add(node.id)
-      return next
+      return { key: structureKey, ids: next }
     })
   }
 
@@ -1145,12 +1164,17 @@ function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: Doc
   }
 
   const collapseAll = () => {
-    setCollapsedNodeIds(new Set(graph.collapsibleIds))
+    setCollapseState({ key: structureKey, ids: new Set(graph.collapsibleIds) })
     resetExplorerView()
   }
 
   const expandAll = () => {
-    setCollapsedNodeIds(new Set())
+    setCollapseState({ key: structureKey, ids: new Set() })
+    resetExplorerView()
+  }
+
+  const collapseToSecondLevel = () => {
+    setCollapseState({ key: structureKey, ids: defaultSecondLevelCollapsedIds(props.documents) })
     resetExplorerView()
   }
 
@@ -1206,6 +1230,7 @@ function KnowledgeView(props: { documents: DocumentItem[]; selectedDocument: Doc
             <button className="icon-button" onClick={() => setScale(viewport.scale + 0.1)} title="Inzoomen" aria-label="Inzoomen"><Plus size={16} /></button>
             <button className="icon-button" onClick={() => setScale(viewport.scale - 0.1)} title="Uitzoomen" aria-label="Uitzoomen"><Minus size={16} /></button>
             <button className="icon-button" onClick={resetExplorerView} title="Weergave resetten" aria-label="Weergave resetten"><Maximize2 size={16} /></button>
+            <button className="secondary compact" onClick={collapseToSecondLevel}>Niveau 2</button>
             <button className="secondary compact" onClick={expandAll}>Alles open</button>
             <button className="secondary compact" onClick={collapseAll}>Alles dicht</button>
           </div>
@@ -1347,6 +1372,16 @@ function collectCollapsibleTreeIds(nodes: DocumentTreeNode[]) {
   }
   nodes.forEach(walk)
   return ids
+}
+
+function defaultSecondLevelCollapsedIds(documents: DocumentItem[]) {
+  const ids: string[] = []
+  function walk(node: DocumentTreeNode, depth: number) {
+    if (!node.document && node.children.length > 0 && depth >= 1) ids.push(`group-${node.id}`)
+    node.children.forEach((child) => walk(child, depth + 1))
+  }
+  buildDocumentTree(uniqueDocuments(documents)).forEach((node) => walk(node, 1))
+  return new Set(ids)
 }
 
 function uniqueDocuments(documents: DocumentItem[]) {
@@ -1526,6 +1561,7 @@ function DocsView() {
   return (
     <section className="panel docs-panel wide">
       <div className="panel-title"><BookOpen size={18} /> API documentatie</div>
+      <p className="body-text">De REST API is de operationele laag achter websites, scans, documenten, semantisch zoeken, analyses, gebruikers en instellingen. Swagger bevat per endpoint context over doel, databetekenis, foutgedrag en hoe UI en MCP dezelfde businessregels gebruiken.</p>
       <a href="/docs" target="_blank">Swagger UI openen</a>
       <a href="/openapi.json" target="_blank">OpenAPI JSON openen</a>
       <code>POST /api/scans</code>
@@ -1539,6 +1575,7 @@ function McpView() {
   return (
     <section className="panel docs-panel wide">
       <div className="panel-title"><Cable size={18} /> MCP server</div>
+      <p className="body-text">De MCP-server ontsluit crawl- en analysedata als LLM-tools. Gebruik eerst `list_websites`, daarna scans/status of semantische zoekopdrachten, en haal bestaande analyse-runs op voordat je nieuwe AI-kosten maakt.</p>
       <a href="/mcp" target="_blank">MCP manifest openen</a>
       <code>POST /mcp</code>
       <code>{'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"client","version":"1.0.0"}}}'}</code>
@@ -1876,7 +1913,8 @@ function LogManager({ onNotify }: { onNotify: (tone: NonNullable<NotificationSta
   }
 
   useEffect(() => {
-    loadLogs()
+    const timer = window.setTimeout(loadLogs, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   return (

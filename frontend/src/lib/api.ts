@@ -150,7 +150,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       const payload = JSON.parse(text)
       detail = typeof payload.detail === 'string' ? payload.detail : text
     } catch {
-      detail = text
+      // Keep the raw response text when the API does not return JSON.
     }
     throw new Error(detail || `HTTP ${response.status}`)
   }

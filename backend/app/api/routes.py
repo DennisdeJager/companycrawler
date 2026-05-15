@@ -156,17 +156,17 @@ def serialize_scan(db: Session, scan: ScanJob) -> dict:
     }
 
 
-@router.get("/health")
+@router.get("/health", summary="Controleer API-beschikbaarheid", description="Lichtgewicht healthcheck voor load balancers, ALM readiness en deploymentcontrole. Retourneert alleen of de backend bereikbaar is.")
 def health() -> dict[str, str]:
     return {"status": "ok", "app": get_settings().app_name}
 
 
-@router.get("/settings/providers", response_model=ProviderSettingsRead)
+@router.get("/settings/providers", response_model=ProviderSettingsRead, summary="Lees AI-, OAuth- en crawlconfiguratie", description="Geeft veilige configuratiestatus terug voor OpenAI, OpenRouter, Google OAuth, modelkeuzes en crawlgrenzen. Secretwaarden worden nooit teruggegeven; alleen aanwezigheid of een gemaskeerde preview.")
 def get_provider_settings(db: Session = Depends(get_db)) -> dict:
     return provider_status(db)
 
 
-@router.put("/settings/providers", response_model=ProviderSettingsRead)
+@router.put("/settings/providers", response_model=ProviderSettingsRead, summary="Werk providers en crawlgrenzen bij", description="Beheert centrale instellingen voor AI-providers, Google OAuth, standaardmodellen en crawlprestaties. Lege secretvelden overschrijven bestaande secrets niet.")
 def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depends(get_db)) -> dict:
     values = payload.model_dump(exclude_unset=True)
     for key, value in values.items():
@@ -402,7 +402,7 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
     return {"status": "reset"}
 
 
-@router.post("/detect-company-name")
+@router.post("/detect-company-name", summary="Detecteer bedrijfsprofiel vanaf homepage", description="Probeert bedrijfsnaam, plaats, regio en logo af te leiden uit een publieke homepage. Deze metadata wordt later hergebruikt in de UI, analyseprompts, API-responses en MCP-tools.")
 async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[str, str]:
     try:
         result = await CompanyCrawler(db).detect_company_profile(url)
@@ -413,14 +413,14 @@ async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[s
         raise HTTPException(status_code=502, detail=f"Bedrijfsprofiel detecteren mislukt: {exc}") from exc
 
 
-@router.post("/settings/providers/{provider}/test")
+@router.post("/settings/providers/{provider}/test", summary="Test een AI-provider", description="Voert een korte providercheck uit voor OpenAI of OpenRouter met de opgeslagen configuratie. Gebruik dit na secret- of modelwijzigingen voordat scans en analyses op AI-output vertrouwen.")
 async def test_provider(provider: str, db: Session = Depends(get_db)) -> dict[str, str | bool]:
     result = await AIService(db).test_provider(provider)
     log_event(db, level="info" if result["ok"] else "error", category="settings", message=f"{provider} provider test", details=result)
     return result
 
 
-@router.post("/scans", response_model=ScanRead)
+@router.post("/scans", response_model=ScanRead, summary="Start een websitecrawl", description="Zet een crawljob in de wachtrij voor een bestaand website-record. De worker crawlt publieke same-domain pagina's en bestanden, slaat tekst en metadata op, maakt samenvattingen en embeddings, en rapporteert dode links als niet-fatale fouten wanneer mogelijk.")
 async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> dict:
     website = db.get(Website, payload.website_id)
     if not website:
@@ -432,7 +432,7 @@ async def create_scan(payload: ScanCreate, db: Session = Depends(get_db)) -> dic
     return serialize_scan(db, scan)
 
 
-@router.get("/scans/{scan_id}", response_model=ScanRead)
+@router.get("/scans/{scan_id}", response_model=ScanRead, summary="Lees scanstatus en opslagstatistieken", description="Geeft actuele voortgang, status, melding, verwerkte aantallen, eventuele dode links/fouten, looptijd en geschatte normale/vectoropslag terug. UI en MCP-clients gebruiken dit endpoint voor polling.")
 def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
@@ -440,7 +440,7 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     return serialize_scan(db, scan)
 
 
-@router.post("/scans/{scan_id}/pause", response_model=ScanRead)
+@router.post("/scans/{scan_id}/pause", response_model=ScanRead, summary="Pauzeer een lopende scan", description="Zet een queued of running scan op paused. In-flight requests mogen netjes afronden; de worker wacht daarna totdat de scan wordt hervat of gestopt.")
 def pause_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
@@ -453,7 +453,7 @@ def pause_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     return serialize_scan(db, scan)
 
 
-@router.post("/scans/{scan_id}/resume", response_model=ScanRead)
+@router.post("/scans/{scan_id}/resume", response_model=ScanRead, summary="Hervat een gepauzeerde scan", description="Zet een paused scan terug naar queued of running, afhankelijk van of de worker al gestart was. Gebruik dit om tijdelijk crawlverkeer te beperken zonder de job weg te gooien.")
 def resume_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
@@ -466,7 +466,7 @@ def resume_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     return serialize_scan(db, scan)
 
 
-@router.post("/scans/{scan_id}/stop", response_model=ScanRead)
+@router.post("/scans/{scan_id}/stop", response_model=ScanRead, summary="Stop een scan definitief", description="Markeert een queued, running of paused scan als stopped en vult de eindtijd. Gebruik reset op websiteniveau wanneer ook reeds verzamelde data verwijderd moet worden.")
 def stop_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     scan = db.get(ScanJob, scan_id)
     if not scan:
@@ -480,12 +480,12 @@ def stop_scan(scan_id: int, db: Session = Depends(get_db)) -> dict:
     return serialize_scan(db, scan)
 
 
-@router.get("/websites/{website_id}/documents", response_model=list[DocumentRead])
+@router.get("/websites/{website_id}/documents", response_model=list[DocumentRead], summary="Lijst gecrawlde documenten", description="Retourneert alle pagina's en bestanden die bij een website horen. De webconsole gebruikt dit voor de website tree, knowledge graph, inspector en vectorstatusoverzicht.")
 def list_documents(website_id: int, db: Session = Depends(get_db)) -> list[Document]:
     return db.query(Document).filter(Document.website_id == website_id).order_by(Document.created_at.desc()).all()
 
 
-@router.get("/documents/{document_id}", response_model=DocumentDetail)
+@router.get("/documents/{document_id}", response_model=DocumentDetail, summary="Lees documentdetail inclusief brontekst", description="Geeft metadata, samenvatting, vectorstatus en volledige geëxtraheerde tekst terug voor één gecrawld document. Gebruik dit alleen wanneer de volledige bron nodig is; voor lijsten is het documents-endpoint lichter.")
 def get_document(document_id: int, db: Session = Depends(get_db)) -> Document:
     document = db.get(Document, document_id)
     if not document:
@@ -493,12 +493,12 @@ def get_document(document_id: int, db: Session = Depends(get_db)) -> Document:
     return document
 
 
-@router.post("/search", response_model=list[SearchResult])
+@router.post("/search", response_model=list[SearchResult], summary="Zoek semantisch in crawlcontent", description="Zoekt op betekenis in documentchunks en geeft bron-URL, titel, samenvatting en score terug. Dit is bedoeld voor analysevoorbereiding, vraagbeantwoording en LLM-contextselectie, niet voor letterlijke full-text export.")
 async def search(payload: SearchRequest, db: Session = Depends(get_db)) -> list[dict]:
     return await semantic_search(db, payload.query, payload.website_id, payload.limit)
 
 
-@router.get("/analysis-prompts", response_model=list[AnalysisPromptRead])
+@router.get("/analysis-prompts", response_model=list[AnalysisPromptRead], summary="Lijst analyseprompts", description="Geeft de beheerbare promptketen terug waarmee de agentische bedrijfsanalyse wordt uitgevoerd. Prompts beschrijven onder meer profiel, uitdagingen, waardekansen, marktcontext en technologie-indicaties.")
 def list_analysis_prompts(db: Session = Depends(get_db)) -> list[AnalysisPrompt]:
     seed_default_analysis_prompts(db)
     return db.query(AnalysisPrompt).order_by(AnalysisPrompt.sort_order, AnalysisPrompt.prompt_id).all()
@@ -526,7 +526,7 @@ def update_analysis_prompt(prompt_id: str, payload: AnalysisPromptUpdate, db: Se
     return prompt
 
 
-@router.post("/websites/{website_id}/analyses", response_model=AnalysisRunRead)
+@router.post("/websites/{website_id}/analyses", response_model=AnalysisRunRead, summary="Start agentische bedrijfsanalyse", description="Maakt een analyse-run voor een website en voert de promptketen op de achtergrond uit. De analyse gebruikt websiteprofiel, samenvattingen, semantische chunks en opgeslagen modelconfiguratie om bruikbare sales- en PoC-context op te bouwen.")
 async def create_analysis(website_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> dict:
     try:
         run = AnalysisService(db).create_company_analysis(website_id)

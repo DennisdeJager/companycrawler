@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Scan- en notificatiefouten sluitbaar gemaakt met automatische verwijdering na 30 seconden; knowledge graph opent standaard tot niveau 2; API- en MCP-documentatie uitgebreid.
 - [x] Reset data-knop toegevoegd aan websitebeheer; reset verwijdert nu scan-, crawl-, vector- en analysedata per website.
 - [x] Darkmode Smawa-logo vervangen door `smawa_logo_transparant_darktheme.png`.
 - [x] Darkmode Smawa-logo vervangen door `Smawa Logo light background transparant2.png`.

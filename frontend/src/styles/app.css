@@ -344,17 +344,38 @@ button:disabled {
 .scan-error {
   max-height: 130px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
   background: #fff2f2;
   border: 1px solid #f3c9c9;
   border-radius: 8px;
   color: #8c2525;
+  margin: 10px 0 0;
+  padding: 9px;
+  position: relative;
+}
+.scan-error pre {
+  color: inherit;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.35;
-  margin: 10px 0 0;
-  padding: 9px;
+  margin: 0;
+  padding-right: 32px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+pre.scan-error {
+  color: #8c2525;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.scan-error-close {
+  min-height: 28px;
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 28px;
 }
 .meter { height: 8px; background: #edf2f5; border-radius: 999px; overflow: hidden; margin: 14px 0; }
 .meter span { display: block; height: 100%; background: #f4a340; transition: width 180ms ease; }

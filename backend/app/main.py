@@ -10,8 +10,21 @@ settings = get_settings()
 
 app = FastAPI(
     title="companycrawler API",
-    description="API for public company website crawling, AI summaries, embeddings, Swagger and MCP access.",
+    description=(
+        "Companycrawler verzamelt publiek toegankelijke website-informatie voor bedrijfsverkenning, "
+        "salesvoorbereiding en PoC-scenario's. De API beheert websites, start en bewaakt crawls, "
+        "ontsluit gevonden documenten en chunks, voert semantische zoekopdrachten uit en start de "
+        "agentische analyseketen die bedrijfsprofiel, uitdagingen, waardekansen, marktcontext en "
+        "technologische aanknopingspunten samenvat. Dezelfde datacontracten voeden de webconsole, "
+        "Swagger/OpenAPI en de MCP-server, zodat UI, API-clients en LLM-tools dezelfde regels en "
+        "context gebruiken."
+    ),
     version="1.0.0",
+    contact={"name": "Smawa"},
+    openapi_tags=[
+        {"name": "default", "description": "Operationele Companycrawler API voor websites, scans, documenten, analyse, gebruikers en instellingen."},
+        {"name": "MCP", "description": "MCP manifest en JSON-RPC transport voor LLM-clients die dezelfde crawl- en analysedata gebruiken."},
+    ],
 )
 
 app.add_middleware(

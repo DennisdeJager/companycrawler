@@ -4,11 +4,11 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class WebsiteCreate(BaseModel):
-    url: HttpUrl
-    company_name: str = Field(min_length=1, max_length=255)
-    company_place: str = Field(default="", max_length=255)
-    region: str = Field(default="", max_length=255)
-    logo_url: str = Field(default="", max_length=2048)
+    url: HttpUrl = Field(description="Publieke start-URL van de website die binnen hetzelfde domein wordt gecrawld.")
+    company_name: str = Field(min_length=1, max_length=255, description="Herkenbare bedrijfsnaam zoals die in UI, analyses en MCP-antwoorden wordt gebruikt.")
+    company_place: str = Field(default="", max_length=255, description="Vestigingsplaats wanneer die bekend of gedetecteerd is.")
+    region: str = Field(default="", max_length=255, description="Regio of marktgebied voor latere analyse- en segmentatiecontext.")
+    logo_url: str = Field(default="", max_length=2048, description="Publieke logo-URL voor herkenning in de webconsole.")
 
 
 class WebsiteUpdate(BaseModel):
@@ -33,7 +33,7 @@ class WebsiteRead(BaseModel):
 
 
 class ScanCreate(BaseModel):
-    website_id: int
+    website_id: int = Field(description="ID van het website-record waarvoor een crawljob in de wachtrij wordt gezet.")
 
 
 class ScanRead(BaseModel):
@@ -41,19 +41,19 @@ class ScanRead(BaseModel):
 
     id: int
     website_id: int
-    status: str
-    progress: int
-    message: str
-    items_found: int
-    items_processed: int
-    error: str
+    status: str = Field(description="Jobstatus: queued, running, paused, stopped, completed of failed.")
+    progress: int = Field(description="Globale voortgang in procenten. Een crawl blijft onder 100 tot de job is afgerond.")
+    message: str = Field(description="Menselijke voortgangstekst voor dashboards en MCP-clients.")
+    items_found: int = Field(description="Aantal bekende URL's/documenten dat tijdens de crawl is ontdekt.")
+    items_processed: int = Field(description="Aantal URL's/documenten dat succesvol of gecontroleerd is verwerkt.")
+    error: str = Field(description="Niet-lege tekst met fatale fouten of overgeslagen URL's, zoals dode links. UI-clients mogen dit als tijdelijke notificatie tonen.")
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
     duration_seconds: int = 0
-    normal_db_size_mb: float = 0
-    vector_db_size_mb: float = 0
-    scan_max_parallel_items: int = 1
+    normal_db_size_mb: float = Field(default=0, description="Geschatte opslagruimte voor documentmetadata, tekst en samenvattingen in MB.")
+    vector_db_size_mb: float = Field(default=0, description="Geschatte opslagruimte voor chunks en embeddings in MB.")
+    scan_max_parallel_items: int = Field(default=1, description="Aantal parallelle crawlverwerkingen dat voor deze omgeving is geconfigureerd.")
 
 
 class DocumentRead(BaseModel):
@@ -61,15 +61,15 @@ class DocumentRead(BaseModel):
 
     id: int
     website_id: int
-    source_url: str
-    title: str
-    content_type: str
-    file_name: str
+    source_url: str = Field(description="Canonieke URL van de gecrawlde pagina of het bestand.")
+    title: str = Field(description="Titel of afgeleide bestandsnaam die in tree, graph en zoekresultaten wordt gebruikt.")
+    content_type: str = Field(description="HTTP content-type of afgeleid documenttype.")
+    file_name: str = Field(description="Bestandsnaam voor downloads of documenten; leeg bij normale HTML-pagina's.")
     storage_path: str
     text_hash: str
-    summary: str
-    display_summary: str
-    vector_status: str
+    summary: str = Field(description="AI-samenvatting of extract dat als analysecontext kan worden gebruikt.")
+    display_summary: str = Field(description="Korte UI-vriendelijke samenvatting voor kaarten, inspector en graph nodes.")
+    vector_status: str = Field(description="Embeddingstatus, bijvoorbeeld ready, pending, failed of duplicate.")
     created_at: datetime
 
 
@@ -78,9 +78,9 @@ class DocumentDetail(DocumentRead):
 
 
 class SearchRequest(BaseModel):
-    website_id: int | None = None
-    query: str = Field(min_length=1)
-    limit: int = Field(default=10, ge=1, le=50)
+    website_id: int | None = Field(default=None, description="Optioneel websitefilter. Zonder filter zoekt de API in alle beschikbare crawlcontent.")
+    query: str = Field(min_length=1, description="Semantische vraag of zoekintentie, bijvoorbeeld een markt-, product- of technologiehaakje.")
+    limit: int = Field(default=10, ge=1, le=50, description="Maximum aantal resultaten. Houd dit laag voor LLM-context en hoger voor UI-verkenning.")
 
 
 class SearchResult(BaseModel):
@@ -127,8 +127,8 @@ class AnalysisRunRead(BaseModel):
     website_id: int
     status: str
     model: str
-    extracted_variables: dict[str, str] = {}
-    error: str
+    extracted_variables: dict[str, str] = Field(default={}, description="Gestructureerde bedrijfsvariabelen zoals naam, plaats en regio die de analyseketen gebruikt.")
+    error: str = Field(description="Fouttekst wanneer de analyseketen of een onderliggende provider faalt.")
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
