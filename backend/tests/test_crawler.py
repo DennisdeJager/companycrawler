@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.models.entities import ContentChunk, Document, ScanJob, Website
+from app.models.entities import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, ContentChunk, Document, ScanJob, Website
 from app.services.crawler import CompanyCrawler
 from app.services import crawler as crawler_module
 from app.api.routes import _scan_duration_seconds
@@ -108,6 +108,10 @@ def make_graph_session() -> tuple[Session, Website, ScanJob, Document, ContentCh
     ScanJob.__table__.create(bind=engine)
     Document.__table__.create(bind=engine)
     ContentChunk.__table__.create(bind=engine)
+    AnalysisPrompt.__table__.create(bind=engine)
+    AnalysisRun.__table__.create(bind=engine)
+    AnalysisJobResult.__table__.create(bind=engine)
+    AnalysisInsight.__table__.create(bind=engine)
     db = Session(engine)
     website = Website(url="https://example.com", company_name="Example")
     db.add(website)
@@ -120,6 +124,15 @@ def make_graph_session() -> tuple[Session, Website, ScanJob, Document, ContentCh
     db.commit()
     chunk = ContentChunk(document_id=document.id, chunk_index=0, text="hello", embedding="[]")
     db.add(chunk)
+    prompt = AnalysisPrompt(prompt_id="job_1_code_fields", title="Code fields")
+    db.add(prompt)
+    db.commit()
+    run = AnalysisRun(website_id=website.id, status="completed")
+    db.add(run)
+    db.commit()
+    job = AnalysisJobResult(analysis_run_id=run.id, prompt_id=prompt.prompt_id, status="completed", result_text="klaar")
+    insight = AnalysisInsight(analysis_run_id=run.id, website_id=website.id, prompt_id=prompt.prompt_id, text="klaar")
+    db.add_all([job, insight])
     db.commit()
     return db, website, scan, document, chunk
 
@@ -199,7 +212,7 @@ def test_crawl_setting_validation_rejects_zero() -> None:
         ProviderSettingsUpdate(scan_max_items=0)
 
 
-def test_reset_deletes_documents_scans_and_graph_chunks() -> None:
+def test_reset_deletes_documents_scans_graph_chunks_and_analyses() -> None:
     from app.api.routes import reset_website
 
     db, website, _scan, _document, _chunk = make_graph_session()
@@ -208,4 +221,8 @@ def test_reset_deletes_documents_scans_and_graph_chunks() -> None:
     assert db.query(ContentChunk).count() == 0
     assert db.query(Document).count() == 0
     assert db.query(ScanJob).count() == 0
+    assert db.query(AnalysisRun).count() == 0
+    assert db.query(AnalysisJobResult).count() == 0
+    assert db.query(AnalysisInsight).count() == 0
+    assert db.query(AnalysisPrompt).count() == 1
     assert db.query(Website).count() == 1

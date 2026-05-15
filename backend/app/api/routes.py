@@ -363,8 +363,14 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
     if not website:
         raise HTTPException(status_code=404, detail="Website not found")
     document_ids = [row[0] for row in db.query(Document.id).filter(Document.website_id == website_id).all()]
+    analysis_run_ids = [row[0] for row in db.query(AnalysisRun.id).filter(AnalysisRun.website_id == website_id).all()]
     if document_ids:
         db.query(ContentChunk).filter(ContentChunk.document_id.in_(document_ids)).delete(synchronize_session=False)
+    if analysis_run_ids:
+        db.query(AnalysisJobResult).filter(AnalysisJobResult.analysis_run_id.in_(analysis_run_ids)).delete(synchronize_session=False)
+        db.query(AnalysisInsight).filter(AnalysisInsight.analysis_run_id.in_(analysis_run_ids)).delete(synchronize_session=False)
+    db.query(AnalysisInsight).filter(AnalysisInsight.website_id == website_id).delete(synchronize_session=False)
+    db.query(AnalysisRun).filter(AnalysisRun.website_id == website_id).delete(synchronize_session=False)
     db.query(Document).filter(Document.website_id == website_id).delete()
     db.query(ScanJob).filter(ScanJob.website_id == website_id).delete()
     db.commit()

@@ -636,6 +636,11 @@ button.compact {
   object-fit: contain;
 }
 .row-actions { display: flex; gap: 6px; }
+.row-actions button.danger-icon {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
 .empty { color: #66727f; margin: 8px 0; }
 
 .modal-backdrop {
@@ -1287,6 +1292,11 @@ button.compact {
   background: #21303b;
   border-color: #31424f;
   color: #8bd5d5;
+}
+.theme-dark .row-actions button.danger-icon {
+  background: #3a2417;
+  border-color: #7c3f16;
+  color: #fdba74;
 }
 .theme-dark .mind-node-root {
   background: #123033;

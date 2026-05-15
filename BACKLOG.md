@@ -2,6 +2,7 @@
 
 ## Done
 
+- [x] Reset data-knop toegevoegd aan websitebeheer; reset verwijdert nu scan-, crawl-, vector- en analysedata per website.
 - [x] Darkmode Smawa-logo vervangen door `smawa_logo_transparant_darktheme.png`.
 - [x] Darkmode Smawa-logo vervangen door `Smawa Logo light background transparant2.png`.
 - [x] Transparant light Smawa-logo ingesteld voor darkmode.

@@ -307,10 +307,20 @@ function App() {
 
   async function resetSelected() {
     if (!selectedWebsite) return
-    await api.resetWebsite(selectedWebsite.id)
-    setDocuments([])
-    setSelectedDocument(null)
-    setMessage('Alle crawl-data voor deze website is verwijderd.')
+    await resetWebsiteData(selectedWebsite)
+  }
+
+  async function resetWebsiteData(website: Website) {
+    if (!window.confirm(`Alle scan- en analysedata van ${website.company_name} verwijderen? De website zelf blijft bestaan.`)) return
+    await api.resetWebsite(website.id)
+    if (selectedWebsite?.id === website.id) {
+      setDocuments([])
+      setSelectedDocument(null)
+      setAnalyses([])
+      setActiveAnalysis(null)
+      setScan(null)
+    }
+    setMessage('Alle scan- en analysedata voor deze website is verwijderd.')
   }
 
   function openNewWebsiteDialog() {
@@ -523,6 +533,7 @@ function App() {
             selectWebsite={selectWebsite}
             openEditWebsiteDialog={openEditWebsiteDialog}
             openNewWebsiteDialog={openNewWebsiteDialog}
+            resetWebsiteData={resetWebsiteData}
             setCompany={setFormCompany}
             setLogoUrl={setFormLogoUrl}
             setUrl={setFormUrl}
@@ -855,6 +866,7 @@ function WebsitesView(props: {
   logoUrl: string
   openEditWebsiteDialog: (website: Website) => void
   openNewWebsiteDialog: () => void
+  resetWebsiteData: (website: Website) => void
   saveWebsite: () => void
   selectedWebsite: Website | null
   selectWebsite: (website: Website) => void
@@ -883,6 +895,7 @@ function WebsitesView(props: {
               </button>
               <div className="row-actions">
                 <button title="Bewerken" onClick={() => props.openEditWebsiteDialog(website)}><Pencil size={16} /></button>
+                <button className="danger-icon" title="Scan- en analysedata resetten" onClick={() => props.resetWebsiteData(website)}><RefreshCw size={16} /></button>
                 <button title="Verwijderen" onClick={() => props.deleteWebsite(website)}><Trash2 size={16} /></button>
               </div>
             </div>
