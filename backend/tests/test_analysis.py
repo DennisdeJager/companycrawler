@@ -54,6 +54,33 @@ def test_normalize_variables_ignores_unknown_company_name(db_session) -> None:
     assert variables == {"Bedrijfsnaam": "Example BV", "Bedrijfsplaats": "onbekend", "Regio": "Noord-Holland"}
 
 
+def test_parse_json_returns_none_for_malformed_model_json(db_session) -> None:
+    service = AnalysisService(db_session)
+    malformed = """
+    Hier is de analyse:
+    {
+      "bedrijf": "Example",
+      "uitdagingen": [
+        {"titel": "Administratie"}
+      ]
+      "samenvatting": "Mist een komma"
+    }
+    """
+
+    assert service._parse_json(malformed) is None
+
+
+def test_parse_json_extracts_balanced_object_from_markdown(db_session) -> None:
+    service = AnalysisService(db_session)
+    text = """```json
+    {"Bedrijfsnaam":"Example","notitie":"tekst met } in string"}
+    ```
+    Extra toelichting.
+    """
+
+    assert service._parse_json(text)["Bedrijfsnaam"] == "Example"
+
+
 def test_extract_responses_text_supports_output_content(db_session) -> None:
     service = AIService(db_session)
 

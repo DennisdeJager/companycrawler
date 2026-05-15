@@ -592,13 +592,41 @@ class AnalysisService:
         clean = text.strip()
         clean = re.sub(r"^```(?:json)?\s*", "", clean, flags=re.I)
         clean = re.sub(r"\s*```$", "", clean)
-        try:
-            return json.loads(clean)
-        except Exception:
-            match = re.search(r"(\{.*\})", clean, flags=re.S)
-            if match:
-                return json.loads(match.group(1))
+        for candidate in [clean, self._extract_json_object(clean)]:
+            if not candidate:
+                continue
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
         return None
+
+    def _extract_json_object(self, text: str) -> str:
+        start = text.find("{")
+        if start < 0:
+            return ""
+        depth = 0
+        in_string = False
+        escaped = False
+        for index, char in enumerate(text[start:], start=start):
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : index + 1]
+        return ""
 
     def _normalize_variables(self, value: dict[str, Any], website: Website) -> dict[str, str]:
         company_name = self._clean_variable(value.get("Bedrijfsnaam"))
