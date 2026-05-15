@@ -195,7 +195,7 @@ function App() {
     const analysisRows = await api.analyses(website.id).catch(() => [])
     setAnalyses(analysisRows)
     setActiveAnalysis(analysisRows[0] ?? null)
-    if (announce) notify('success', `${website.company_name} is actief geselecteerd.`)
+    if (announce) notify('success', `${website.company_name} is nu actief.`)
   }
 
   useEffect(() => {
