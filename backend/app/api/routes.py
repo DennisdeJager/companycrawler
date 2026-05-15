@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
-from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, ContentChunk, Document, ModelConfig, ScanJob, User, Website
+from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, AppLog, ContentChunk, Document, ModelConfig, ScanJob, User, Website
 from app.models.entities import ScanStatus, UserRole
 from app.schemas.dto import (
     DocumentDetail,
     DocumentRead,
+    AppLogRead,
     AnalysisPromptRead,
     AnalysisPromptUpdate,
     AnalysisRunRead,
@@ -32,6 +33,7 @@ from app.schemas.dto import (
 )
 from app.services.ai import AIService
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts, serialize_analysis_run
+from app.services.app_logging import log_event
 from app.services.auth import (
     OAUTH_STATE_COOKIE,
     SESSION_COOKIE,
@@ -175,6 +177,19 @@ def update_provider_settings(payload: ProviderSettingsUpdate, db: Session = Depe
             continue
         set_setting(db, key, clean_value, key in SECRET_KEYS)
     return provider_status(db)
+
+
+@router.get("/settings/logs", response_model=list[AppLogRead])
+def list_logs(limit: int = 120, db: Session = Depends(get_db)) -> list[AppLog]:
+    bounded_limit = max(1, min(limit, 500))
+    return db.query(AppLog).order_by(AppLog.created_at.desc(), AppLog.id.desc()).limit(bounded_limit).all()
+
+
+@router.delete("/settings/logs")
+def clear_logs(db: Session = Depends(get_db)) -> dict[str, str]:
+    db.query(AppLog).delete()
+    db.commit()
+    return {"status": "deleted"}
 
 
 @router.post("/auth/google", response_model=UserRead)
@@ -390,14 +405,19 @@ def reset_website(website_id: int, db: Session = Depends(get_db)) -> dict[str, s
 @router.post("/detect-company-name")
 async def detect_company_name(url: str, db: Session = Depends(get_db)) -> dict[str, str]:
     try:
-        return await CompanyCrawler(db).detect_company_profile(url)
+        result = await CompanyCrawler(db).detect_company_profile(url)
+        log_event(db, level="info", category="website", message=f"Bedrijfsprofiel gedetecteerd voor {url}", details=result)
+        return result
     except Exception as exc:
+        log_event(db, level="error", category="website", message=f"Bedrijfsprofiel detecteren mislukt voor {url}", details=str(exc))
         raise HTTPException(status_code=502, detail=f"Bedrijfsprofiel detecteren mislukt: {exc}") from exc
 
 
 @router.post("/settings/providers/{provider}/test")
 async def test_provider(provider: str, db: Session = Depends(get_db)) -> dict[str, str | bool]:
-    return await AIService(db).test_provider(provider)
+    result = await AIService(db).test_provider(provider)
+    log_event(db, level="info" if result["ok"] else "error", category="settings", message=f"{provider} provider test", details=result)
+    return result
 
 
 @router.post("/scans", response_model=ScanRead)
@@ -512,6 +532,7 @@ async def create_analysis(website_id: int, background_tasks: BackgroundTasks, db
         run = AnalysisService(db).create_company_analysis(website_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    log_event(db, level="info", category="analysis", message=f"Analyse #{run.id} gestart", website_id=website_id, analysis_run_id=run.id)
     background_tasks.add_task(_run_analysis_background, run.id)
     return serialize_analysis_run(run)
 

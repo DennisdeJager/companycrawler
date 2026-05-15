@@ -36,12 +36,12 @@ import {
 } from 'lucide-react'
 import smawaLogoDark from './assets/smawa-logo-light-transparent.png'
 import smawaLogoLight from './assets/smawa-logo-background-white.png'
-import { api, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
+import { api, AppLog, DocumentDetail, DocumentItem, ModelConfig, ProviderSettings, Scan, User, Website } from './lib/api'
 import type { AnalysisPrompt, AnalysisRun } from './lib/api'
 import './styles/app.css'
 
 type View = 'Dashboard' | 'Websites' | 'Scans' | 'Knowledge Graph' | 'Analyse' | 'API Docs' | 'MCP Server' | 'Users' | 'Settings'
-type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts'
+type SettingsTab = 'providers' | 'google' | 'crawl' | 'prompts' | 'logs'
 type NotificationState = { tone: 'success' | 'error' | 'info'; text: string } | null
 
 const nav: { label: View; icon: React.ComponentType<{ size?: number }> }[] = [
@@ -1484,6 +1484,12 @@ function AnalysisView({
               <span>{activeAnalysis.extracted_variables.Bedrijfsplaats || 'Plaats onbekend'}</span>
               <span>{activeAnalysis.extracted_variables.Regio || 'Regio onbekend'}</span>
             </div>
+            {activeAnalysis.error && (
+              <div className="inline-error">
+                <strong>Analysefout</strong>
+                <pre>{activeAnalysis.error}</pre>
+              </div>
+            )}
             <div className="job-tabs">
               {activeAnalysis.jobs.map((job) => (
                 <button className={selectedJob?.prompt_id === job.prompt_id ? 'active' : ''} key={job.prompt_id} onClick={() => setSelectedPromptId(job.prompt_id)}>
@@ -1722,6 +1728,9 @@ function SettingsView({
         <button className={activeTab === 'prompts' ? 'active' : ''} onClick={() => setActiveTab('prompts')} type="button">
           <ClipboardList size={16} /> Promptbeheer
         </button>
+        <button className={activeTab === 'logs' ? 'active' : ''} onClick={() => setActiveTab('logs')} type="button">
+          <FileText size={16} /> Logging
+        </button>
       </div>
 
       {activeTab === 'providers' && (
@@ -1830,6 +1839,82 @@ function SettingsView({
           <PromptManager prompts={prompts} saveAnalysisPrompt={saveAnalysisPrompt} />
         </div>
       )}
+
+      {activeTab === 'logs' && (
+        <div className="settings-tab-body">
+          <LogManager onNotify={onNotify} />
+        </div>
+      )}
+    </section>
+  )
+}
+
+function LogManager({ onNotify }: { onNotify: (tone: NonNullable<NotificationState>['tone'], text: string) => void }) {
+  const [logs, setLogs] = useState<AppLog[]>([])
+  const [loading, setLoading] = useState(false)
+
+  async function loadLogs() {
+    setLoading(true)
+    try {
+      setLogs(await api.logs(200))
+    } catch (error) {
+      onNotify('error', `Logs laden mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function clearLogs() {
+    if (!window.confirm('Alle logregels verwijderen?')) return
+    try {
+      await api.clearLogs()
+      setLogs([])
+      onNotify('success', 'Logs gewist.')
+    } catch (error) {
+      onNotify('error', `Logs wissen mislukt: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  useEffect(() => {
+    loadLogs()
+  }, [])
+
+  return (
+    <section className="logs-panel">
+      <div className="panel-heading-row">
+        <div className="panel-title"><FileText size={18} /> Logging</div>
+        <div className="button-row">
+          <button className="secondary" onClick={loadLogs} disabled={loading}><RefreshCw size={16} /> Verversen</button>
+          <button className="danger" onClick={clearLogs} disabled={logs.length === 0}><Trash2 size={16} /> Wissen</button>
+        </div>
+      </div>
+      <div className="log-table">
+        <div className="log-row log-header">
+          <span>Tijd</span>
+          <span>Niveau</span>
+          <span>Categorie</span>
+          <span>Bericht</span>
+          <span>Context</span>
+        </div>
+        {logs.map((item) => (
+          <div className={`log-row ${item.level}`} key={item.id}>
+            <span>{new Date(item.created_at).toLocaleString()}</span>
+            <span className={`log-level ${item.level}`}>{item.level}</span>
+            <span>{item.category}</span>
+            <span>
+              <strong>{item.message}</strong>
+              {item.details && <pre>{item.details}</pre>}
+            </span>
+            <span>
+              {item.website_id && <small>website #{item.website_id}</small>}
+              {item.analysis_run_id && <small>analyse #{item.analysis_run_id}</small>}
+              {item.analysis_job_result_id && <small>job #{item.analysis_job_result_id}</small>}
+            </span>
+          </div>
+        ))}
+        {!loading && logs.length === 0 && <p className="empty">Nog geen logregels.</p>}
+        {loading && <p className="empty">Logs laden...</p>}
+      </div>
     </section>
   )
 }

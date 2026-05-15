@@ -126,6 +126,18 @@ export type AnalysisRun = {
   jobs: AnalysisJobResult[]
 }
 
+export type AppLog = {
+  id: number
+  level: string
+  category: string
+  message: string
+  details: string
+  website_id: number | null
+  analysis_run_id: number | null
+  analysis_job_result_id: number | null
+  created_at: string
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
@@ -172,6 +184,8 @@ export const api = {
     request<User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   updateUserRole: (id: number, role: string) => request<User>(`/api/users/${id}/role?role=${encodeURIComponent(role)}`, { method: 'PATCH' }),
   deleteUser: (id: number) => request<{ status: string }>(`/api/users/${id}`, { method: 'DELETE' }),
+  logs: (limit = 120) => request<AppLog[]>(`/api/settings/logs?limit=${limit}`),
+  clearLogs: () => request<{ status: string }>('/api/settings/logs', { method: 'DELETE' }),
   providerSettings: () => request<ProviderSettings>('/api/settings/providers'),
   saveProviderSettings: (data: Partial<ProviderSettings> & { openai_api_key?: string; openrouter_api_key?: string; google_client_secret?: string }) =>
     request<ProviderSettings>('/api/settings/providers', { method: 'PUT', body: JSON.stringify(data) }),

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, ContentChunk, Document, Website
 from app.services.ai import AIService, embedding_from_json, embedding_to_json
+from app.services.app_logging import log_event
 from app.services.search import cosine
 
 
@@ -380,6 +381,15 @@ class AnalysisService:
             extracted = self._normalize_variables(variables, website)
             run.extracted_variables = json.dumps(extracted, ensure_ascii=False)
             self.db.commit()
+            log_event(
+                self.db,
+                level="info",
+                category="analysis",
+                message=f"Analyse #{run.id}: codevelden bepaald",
+                details=extracted,
+                website_id=run.website_id,
+                analysis_run_id=run.id,
+            )
             prompt_ids = [
                 "job_2_bedrijfsprofiel",
                 "job_3_uitdagingen",
@@ -395,6 +405,14 @@ class AnalysisService:
             run.status = "completed"
             run.completed_at = datetime.utcnow()
             self.db.commit()
+            log_event(
+                self.db,
+                level="info",
+                category="analysis",
+                message=f"Analyse #{run.id} afgerond",
+                website_id=run.website_id,
+                analysis_run_id=run.id,
+            )
             self.db.refresh(run)
             return run
         except Exception as exc:
@@ -402,6 +420,15 @@ class AnalysisService:
             run.error = str(exc)
             run.completed_at = datetime.utcnow()
             self.db.commit()
+            log_event(
+                self.db,
+                level="error",
+                category="analysis",
+                message=f"Analyse #{run.id} mislukt",
+                details=str(exc),
+                website_id=run.website_id,
+                analysis_run_id=run.id,
+            )
             self.db.refresh(run)
             return run
 
@@ -433,6 +460,15 @@ class AnalysisService:
         self.db.add(result)
         self.db.commit()
         try:
+            log_event(
+                self.db,
+                level="info",
+                category="analysis",
+                message=f"Analyse #{run.id}: {prompt_id} gestart",
+                website_id=run.website_id,
+                analysis_run_id=run.id,
+                analysis_job_result_id=result.id,
+            )
             text = await self.ai.complete(full_prompt, max_tokens=1800)
             parsed = self._parse_json(text)
             result.result_text = text
@@ -441,6 +477,16 @@ class AnalysisService:
             result.status = "completed"
             result.completed_at = datetime.utcnow()
             self.db.commit()
+            log_event(
+                self.db,
+                level="info",
+                category="analysis",
+                message=f"Analyse #{run.id}: {prompt_id} afgerond",
+                details={"summary": result.summary, "json_parsed": parsed is not None},
+                website_id=run.website_id,
+                analysis_run_id=run.id,
+                analysis_job_result_id=result.id,
+            )
             await self._store_insight(run, prompt_id, result.summary or text[:700], sources)
             return parsed if isinstance(parsed, dict) else {}
         except Exception as exc:
@@ -448,6 +494,16 @@ class AnalysisService:
             result.error = str(exc)
             result.completed_at = datetime.utcnow()
             self.db.commit()
+            log_event(
+                self.db,
+                level="error",
+                category="analysis",
+                message=f"Analyse #{run.id}: {prompt_id} mislukt",
+                details=str(exc),
+                website_id=run.website_id,
+                analysis_run_id=run.id,
+                analysis_job_result_id=result.id,
+            )
             raise
 
     async def _store_insight(self, run: AnalysisRun, prompt_id: str, text: str, sources: list[dict[str, Any]]) -> None:

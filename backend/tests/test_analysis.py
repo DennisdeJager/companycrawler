@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import Base
 from app.api.routes import delete_analysis, delete_analysis_job_result
-from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, Website
+from app.models import AnalysisInsight, AnalysisJobResult, AnalysisPrompt, AnalysisRun, AppLog, Website
 from app.services.ai import AIProviderError, AIService
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts
 
@@ -138,6 +138,27 @@ async def test_run_company_analysis_stores_all_jobs(db_session, monkeypatch) -> 
     assert run.status == "completed"
     assert len(run.job_results) == 9
     assert '"Bedrijfsplaats": "Amsterdam"' in run.extracted_variables
+    assert db_session.query(AppLog).filter(AppLog.category == "analysis").count() > 0
+
+
+@pytest.mark.asyncio
+async def test_run_company_analysis_logs_failures(db_session, monkeypatch) -> None:
+    seed_default_analysis_prompts(db_session)
+    website = Website(url="https://example.com", company_name="Example", logo_url="")
+    db_session.add(website)
+    db_session.commit()
+    db_session.refresh(website)
+
+    async def failing_complete(self, prompt: str, max_tokens: int = 1400) -> str:
+        raise AIProviderError("OpenAI testfout")
+
+    monkeypatch.setattr("app.services.ai.AIService.complete", failing_complete)
+
+    run = await AnalysisService(db_session).run_company_analysis(website.id)
+
+    assert run.status == "failed"
+    assert "OpenAI testfout" in run.error
+    assert db_session.query(AppLog).filter(AppLog.level == "error", AppLog.category == "analysis").count() >= 1
 
 
 def test_delete_analysis_job_result_removes_result_and_insight(db_session) -> None:

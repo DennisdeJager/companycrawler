@@ -197,3 +197,17 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text, default="")
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AppLog(Base):
+    __tablename__ = "app_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    level: Mapped[str] = mapped_column(String(32), index=True)
+    category: Mapped[str] = mapped_column(String(64), index=True)
+    message: Mapped[str] = mapped_column(String(512))
+    details: Mapped[str] = mapped_column(Text, default="")
+    website_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    analysis_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    analysis_job_result_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

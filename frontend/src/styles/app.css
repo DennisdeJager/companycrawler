@@ -923,6 +923,19 @@ button.compact {
   margin: 8px 0;
   padding: 9px;
 }
+.inline-error {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  color: #9f1239;
+  margin: 10px 0;
+  padding: 10px;
+}
+.inline-error pre {
+  color: inherit;
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
 
 .settings-divider {
   border-top: 1px solid #eef2f5;
@@ -979,6 +992,74 @@ button.compact {
 }
 .prompt-tab-body {
   max-width: none;
+}
+.logs-panel {
+  display: grid;
+  gap: 12px;
+}
+.log-table {
+  border: 1px solid #eef2f5;
+  border-radius: 8px;
+  overflow: auto;
+}
+.log-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.55fr) 90px 120px minmax(320px, 1.8fr) minmax(120px, 0.5fr);
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #eef2f5;
+  align-items: start;
+  font-size: 13px;
+}
+.log-row:last-child {
+  border-bottom: 0;
+}
+.log-header {
+  background: #f6f8fa;
+  color: #66727f;
+  font-weight: 800;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.log-row.error {
+  background: #fff7f7;
+}
+.log-row.warning {
+  background: #fffaf0;
+}
+.log-level {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 24px;
+  padding: 4px 8px;
+}
+.log-level.info {
+  background: #e6f6f7;
+  color: #0f6f71;
+}
+.log-level.error {
+  background: #ffe4e6;
+  color: #9f1239;
+}
+.log-level.warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+.log-row pre {
+  background: transparent;
+  border: 0;
+  margin: 6px 0 0;
+  max-height: 160px;
+  padding: 0;
+  white-space: pre-wrap;
+}
+.log-row small {
+  display: block;
+  margin-bottom: 4px;
 }
 .number-setting {
   margin-top: 10px;

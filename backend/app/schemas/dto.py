@@ -217,3 +217,17 @@ class ProviderSettingsUpdate(BaseModel):
     scan_max_file_mb: int | None = Field(default=None, ge=1)
     scan_max_depth: int | None = Field(default=None, ge=1)
     scan_max_parallel_items: int | None = Field(default=None, ge=1)
+
+
+class AppLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    level: str
+    category: str
+    message: str
+    details: str
+    website_id: int | None = None
+    analysis_run_id: int | None = None
+    analysis_job_result_id: int | None = None
+    created_at: datetime
