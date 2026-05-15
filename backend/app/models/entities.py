@@ -56,6 +56,30 @@ class ApiToken(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class OAuthClient(Base):
+    __tablename__ = "oauth_clients"
+
+    client_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    client_name: Mapped[str] = mapped_column(String(255), default="")
+    redirect_uris: Mapped[str] = mapped_column(Text, default="[]")
+    scope: Mapped[str] = mapped_column(String(255), default="read execute")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OAuthAuthorizationCode(Base):
+    __tablename__ = "oauth_authorization_codes"
+
+    code: Mapped[str] = mapped_column(String(128), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(128), index=True)
+    redirect_uri: Mapped[str] = mapped_column(String(2048))
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    scope: Mapped[str] = mapped_column(String(255), default="read")
+    code_challenge: Mapped[str] = mapped_column(String(255), default="")
+    code_challenge_method: Mapped[str] = mapped_column(String(16), default="S256")
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Website(Base):
     __tablename__ = "websites"
 

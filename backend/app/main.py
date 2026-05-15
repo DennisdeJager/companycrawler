@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.mcp import router as mcp_router
+from app.api.oauth import router as oauth_router
 from app.api.routes import router as api_router
 from app.core.config import get_settings
 from app.core.database import init_db
@@ -39,6 +40,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+app.include_router(oauth_router)
 app.include_router(mcp_router)
 
 

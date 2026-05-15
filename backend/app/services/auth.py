@@ -259,10 +259,20 @@ def require_mcp_principal(
 ) -> ApiPrincipal:
     raw_token = _bearer_token(authorization)
     if not raw_token:
-        raise HTTPException(status_code=401, detail="MCP requires a bearer API token")
+        resource_metadata_url = str(request.base_url).rstrip("/") + "/.well-known/oauth-protected-resource/mcp"
+        raise HTTPException(
+            status_code=401,
+            detail="MCP requires a bearer API token",
+            headers={"WWW-Authenticate": f'Bearer resource_metadata="{resource_metadata_url}", scope="read execute"'},
+        )
     principal = _api_token_principal(db, raw_token, request)
     if not principal:
-        raise HTTPException(status_code=401, detail="Invalid API token")
+        resource_metadata_url = str(request.base_url).rstrip("/") + "/.well-known/oauth-protected-resource/mcp"
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API token",
+            headers={"WWW-Authenticate": f'Bearer error="invalid_token", resource_metadata="{resource_metadata_url}", scope="read execute"'},
+        )
     return principal
 
 

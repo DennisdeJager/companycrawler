@@ -14,10 +14,22 @@ Belangrijke interpretatieregel: MCP-output is analysecontext, geen definitieve w
 - JSON-RPC endpoint: `POST /mcp`
 - Directe toolroutes: `POST /mcp/tools/<tool_name>`
 - Protocolversie: `2025-06-18`
-- Authenticatie: verplicht via `Authorization: Bearer <api-token>`. MCP accepteert bewust geen browsercookie.
+- Authenticatie: verplicht via `Authorization: Bearer <access-token>`. MCP accepteert bewust geen browsercookie.
 - Scopes: `read` voor lezen/zoeken, `execute` voor scans of analyses starten, `admin` voor toekomstige beheer/destructieve tools.
 
-Tokens worden aangemaakt in de webconsole via Settings > API & MCP tokens. De tokenwaarde wordt alleen direct na aanmaken getoond; server-side wordt alleen een SHA-256 hash bewaard. Ongeldige, ingetrokken of verlopen tokens krijgen `401`; tokens zonder juiste scope krijgen `403` of een MCP JSON-RPC error met scope-melding.
+Voor server-to-server gebruik kunnen tokens worden aangemaakt in de webconsole via Settings > API & MCP tokens. De tokenwaarde wordt alleen direct na aanmaken getoond; server-side wordt alleen een SHA-256 hash bewaard.
+
+Voor OpenAI ChatGPT Developer Mode/custom apps ondersteunt Companycrawler OAuth authorization-code met PKCE en dynamic client registration:
+
+- Protected resource metadata: `GET /.well-known/oauth-protected-resource` en `GET /.well-known/oauth-protected-resource/mcp`
+- Authorization server metadata: `GET /.well-known/oauth-authorization-server`
+- Dynamic client registration: `POST /oauth/register`
+- Authorize endpoint: `GET /oauth/authorize`
+- Token endpoint: `POST /oauth/token`
+
+OAuth access tokens worden intern als tijdelijke hashed API tokens opgeslagen en verlopen na 8 uur. OpenAI krijgt dus een gewone Bearer token voor MCP-calls, maar de gebruiker hoeft deze niet handmatig te plakken. De gebruiker moet in de browser een actieve Google-sessie in Companycrawler hebben en minimaal rol `user` hebben; `guest` krijgt geen toegang. Ongeldige, ingetrokken of verlopen tokens krijgen `401`; tokens zonder juiste scope krijgen `403` of een MCP JSON-RPC error met scope-melding.
+
+Wanneer `/mcp` zonder geldig Bearer-token wordt aangeroepen, geeft de server een `WWW-Authenticate` header terug met `resource_metadata`, zodat MCP-clients de OAuth metadata automatisch kunnen ontdekken.
 
 ## Websiteprofiel datacontract
 

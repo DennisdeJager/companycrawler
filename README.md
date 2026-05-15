@@ -23,12 +23,22 @@ Daarna:
 - Webconsole: http://localhost:8080
 - API: http://localhost:8000
 - Swagger: http://localhost:8000/api/docs, alleen voor admins met sessiecookie
-- MCP manifest: http://localhost:8000/mcp, alleen met Bearer API token
+- MCP manifest: http://localhost:8000/mcp, alleen met Bearer API token of OAuth access token
 - MCP JSON-RPC endpoint voor ChatGPT en andere MCP-clients: `POST http://localhost:8000/mcp`
 
 ## MCP gebruik
 
-De MCP server ondersteunt Streamable HTTP via JSON-RPC op `/mcp`. MCP accepteert alleen API tokens via `Authorization: Bearer <token>`, geen browsercookie. Maak tokens aan via Settings > API & MCP tokens. Scopes zijn `read`, `execute` en `admin`; `execute` is nodig voor tools die scans of analyses starten.
+De MCP server ondersteunt Streamable HTTP via JSON-RPC op `/mcp`. MCP accepteert alleen Bearer tokens via `Authorization: Bearer <token>`, geen browsercookie.
+
+Voor server-to-server gebruik maak je tokens aan via Settings > API & MCP tokens. Voor OpenAI ChatGPT Developer Mode/custom apps ondersteunt de server OAuth discovery, dynamic client registration en authorization-code + PKCE via:
+
+- `/.well-known/oauth-protected-resource/mcp`
+- `/.well-known/oauth-authorization-server`
+- `/oauth/register`
+- `/oauth/authorize`
+- `/oauth/token`
+
+Scopes zijn `read`, `execute` en `admin`; `execute` is nodig voor tools die scans of analyses starten. OAuth voor MCP geeft maximaal `read execute` uit en vereist een ingelogde Companycrawler gebruiker met rol `user` of `admin`.
 
 Voorbeeld:
 
