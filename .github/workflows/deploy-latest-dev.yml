@@ -136,8 +136,7 @@ jobs:
           tar --exclude .git --exclude node_modules --exclude dist --exclude .env -czf "$LOCAL_SOURCE_ARCHIVE" .
           scp -i ~/.ssh/deploy_key "$LOCAL_SOURCE_ARCHIVE" "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_SOURCE_ARCHIVE"
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_DEPLOY_APP_DIR' && tar -xzf '$REMOTE_SOURCE_ARCHIVE' && rm '$REMOTE_SOURCE_ARCHIVE'"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "if [ ! -f '$REMOTE_DEPLOY_APP_DIR/.env' ] && [ -f '$DEPLOY_APP_DIR/.env' ]; then cp '$DEPLOY_APP_DIR/.env' '$REMOTE_DEPLOY_APP_DIR/.env'; fi"
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_DEPLOY_APP_DIR' && if [ ! -f .env ] && [ -f .env.example ]; then cp .env.example .env; fi"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "cd '$REMOTE_DEPLOY_APP_DIR' && sh deploy/sync-env.sh .env '$DEPLOY_APP_DIR/.env' .env.example"
           COMPOSE_FILE=""
           for candidate in compose.yaml compose.yml docker-compose.yml docker-compose.yaml; do
             if [ -f "$candidate" ]; then COMPOSE_FILE="$candidate"; break; fi

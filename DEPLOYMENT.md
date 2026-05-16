@@ -61,7 +61,7 @@ Voor dev/public login:
 - Authorized domains: `smawa.nl`
 - Authorized JavaScript origins: niet nodig
 - Server-side `.env`: `GOOGLE_CLIENT_ID` en `GOOGLE_CLIENT_SECRET` moeten ingevuld zijn in de actieve deploymap `capps/apps/companycrawler/.env`. Lokale `.env` wordt bewust niet meegekopieerd door de deploy workflow.
-- Bij deploy probeert de workflow een bestaande legacy `.env` uit `/opt/capps/apps/companycrawler/.env` eenmalig over te nemen wanneer de actieve deploymap nog geen `.env` heeft.
+- Bij deploy vult de workflow ontbrekende waarden voor onder meer `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` en `APP_URL` aan vanuit een bestaande legacy `.env` in `/opt/capps/apps/companycrawler/.env`, zonder reeds ingevulde waarden in de actieve `.env` te overschrijven.
 
 De Settings pagina toont de actieve browser-origin, `APP_URL` origin en redirect URI uit `.env`, zodat zichtbaar is welke redirect URI in Google Cloud geregistreerd moet zijn.
 
