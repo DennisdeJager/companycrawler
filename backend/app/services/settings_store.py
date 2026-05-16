@@ -73,7 +73,7 @@ def purge_env_managed_settings(db: Session) -> None:
         db.commit()
 
 
-def provider_status(db: Session) -> dict:
+def provider_status(db: Session, public_app_url: str | None = None) -> dict:
     purge_env_managed_settings(db)
     settings = get_settings()
     openai_key = get_setting(db, "openai_api_key", settings.openai_api_key)
@@ -99,8 +99,9 @@ def provider_status(db: Session) -> dict:
         warnings.append("Google login is niet geconfigureerd. Development login gebruikt tijdelijk een e-mailadres.")
     elif not google_client_secret:
         warnings.append("Google Client Secret ontbreekt. De server-side Google redirect login kan dan geen token ophalen.")
-    app_url_origin = _origin_from_url(settings.app_url)
-    google_redirect_uri = f"{settings.app_url.rstrip('/')}/api/auth/google/callback" if app_url_origin else ""
+    effective_app_url = (public_app_url or settings.app_url).rstrip("/")
+    app_url_origin = _origin_from_url(effective_app_url)
+    google_redirect_uri = f"{effective_app_url}/api/auth/google/callback" if app_url_origin else ""
     return {
         "openai_configured": bool(openai_key),
         "openrouter_configured": bool(openrouter_key),

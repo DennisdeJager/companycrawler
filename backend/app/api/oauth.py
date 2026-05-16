@@ -10,11 +10,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.models import ApiToken, OAuthAuthorizationCode, OAuthClient, User
 from app.models.entities import ApiTokenScope, UserRole
-from app.services.auth import SESSION_COOKIE, create_api_token_secret, get_session_user, hash_api_token, validate_api_token_scope
+from app.services.auth import SESSION_COOKIE, create_api_token_secret, get_session_user, hash_api_token, public_origin, validate_api_token_scope
 
 router = APIRouter(tags=["OAuth"])
 
@@ -145,7 +144,7 @@ def authorize(
         return _redirect_with_error(redirect_uri, "invalid_request", state)
     user = get_session_user(db, session_token)
     if not user:
-        login_url = f"{get_settings().app_url.rstrip('/')}/api/auth/google/start"
+        login_url = f"{public_origin(request)}/api/auth/google/start"
         return HTMLResponse(
             f"""
             <html><body style="font-family: sans-serif; max-width: 640px; margin: 48px auto;">

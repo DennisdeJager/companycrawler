@@ -48,16 +48,23 @@ def remove_dev_admin_user(db: Session) -> None:
     db.query(User).filter(User.email == "admin@example.com", User.google_sub.startswith("dev-")).delete(synchronize_session=False)
 
 
-def google_redirect_uri() -> str:
+def public_origin(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto.split(',')[0].strip()}://{host.split(',')[0].strip()}".rstrip("/")
+
+
+def google_redirect_uri(base_url: str | None = None) -> str:
     settings = get_settings()
-    return f"{settings.app_url.rstrip('/')}/api/auth/google/callback"
+    origin = (base_url or settings.app_url).rstrip("/")
+    return f"{origin}/api/auth/google/callback"
 
 
-def build_google_authorization_url(state: str) -> str:
+def build_google_authorization_url(state: str, base_url: str | None = None) -> str:
     settings = get_settings()
     params = {
         "client_id": settings.google_client_id,
-        "redirect_uri": google_redirect_uri(),
+        "redirect_uri": google_redirect_uri(base_url),
         "response_type": "code",
         "scope": "openid email profile",
         "state": state,
@@ -108,7 +115,7 @@ def login_with_google(db: Session, credential: str) -> User:
     return _upsert_google_user(db, email, name, google_sub, is_google_oauth)
 
 
-async def login_with_google_code(db: Session, code: str) -> User:
+async def login_with_google_code(db: Session, code: str, redirect_uri: str | None = None) -> User:
     settings = get_settings()
     if not settings.google_client_id or not settings.google_client_secret:
         raise ValueError("Google OAuth Client ID and Client Secret are required")
@@ -120,7 +127,7 @@ async def login_with_google_code(db: Session, code: str) -> User:
                 "code": code,
                 "client_id": settings.google_client_id,
                 "client_secret": settings.google_client_secret,
-                "redirect_uri": google_redirect_uri(),
+                "redirect_uri": redirect_uri or google_redirect_uri(),
                 "grant_type": "authorization_code",
             },
         )

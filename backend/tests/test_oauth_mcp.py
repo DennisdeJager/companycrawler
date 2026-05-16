@@ -74,6 +74,33 @@ def test_oauth_metadata_uses_forwarded_https_origin() -> None:
     assert 'resource_metadata="https://companycrawler.smawa.nl/.well-known/oauth-protected-resource/mcp"' in challenge.headers["www-authenticate"]
 
 
+def test_oauth_authorize_login_link_uses_forwarded_https_origin() -> None:
+    client, _ = _client()
+    redirect_uri = "https://chat.openai.com/aip/oauth/callback"
+    registration = client.post(
+        "/oauth/register",
+        json={"client_name": "ChatGPT", "redirect_uris": [redirect_uri], "scope": "read execute"},
+    )
+
+    authorization = client.get(
+        "/oauth/authorize",
+        params={
+            "response_type": "code",
+            "client_id": registration.json()["client_id"],
+            "redirect_uri": redirect_uri,
+            "state": "state-123",
+            "scope": "read execute",
+            "code_challenge": _challenge("abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            "code_challenge_method": "S256",
+        },
+        headers={"host": "companycrawler.smawa.nl", "x-forwarded-proto": "https", "x-forwarded-host": "companycrawler.smawa.nl"},
+    )
+
+    assert authorization.status_code == 401
+    assert "https://companycrawler.smawa.nl/api/auth/google/start" in authorization.text
+    assert "http://localhost:8080/api/auth/google/start" not in authorization.text
+
+
 def test_dynamic_registration_authorize_and_token_exchange_enable_mcp_access() -> None:
     client, db = _client()
     user = _user(db)

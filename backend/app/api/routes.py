@@ -51,6 +51,7 @@ from app.services.auth import (
     login_with_google,
     login_with_google_code,
     new_oauth_state,
+    public_origin,
     require_api_admin,
     require_api_user,
     validate_api_token_scope,
@@ -175,12 +176,12 @@ def health() -> dict[str, str]:
 
 
 @router.get("/settings/providers", response_model=ProviderSettingsRead, summary="Lees AI-, OAuth- en crawlconfiguratie", description="Geeft veilige configuratiestatus terug voor OpenAI, OpenRouter, Google OAuth, modelkeuzes en crawlgrenzen. Secretwaarden worden nooit teruggegeven; alleen aanwezigheid of een gemaskeerde preview.")
-def get_provider_settings(_: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
-    return provider_status(db)
+def get_provider_settings(request: Request, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
+    return provider_status(db, public_origin(request))
 
 
 @router.put("/settings/providers", response_model=ProviderSettingsRead, summary="Werk providers en crawlgrenzen bij", description="Beheert centrale instellingen voor AI-providers, Google OAuth, standaardmodellen en crawlprestaties. Lege secretvelden overschrijven bestaande secrets niet.")
-def update_provider_settings(payload: ProviderSettingsUpdate, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
+def update_provider_settings(payload: ProviderSettingsUpdate, request: Request, _: User = Depends(require_api_admin), db: Session = Depends(get_db)) -> dict:
     values = payload.model_dump(exclude_unset=True)
     for key, value in values.items():
         if value is None:
@@ -189,7 +190,7 @@ def update_provider_settings(payload: ProviderSettingsUpdate, _: User = Depends(
         if key in SECRET_KEYS and clean_value == "":
             continue
         set_setting(db, key, clean_value, key in SECRET_KEYS)
-    return provider_status(db)
+    return provider_status(db, public_origin(request))
 
 
 @router.get("/settings/logs", response_model=list[AppLogRead])
@@ -214,8 +215,8 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)) -> 
 
 
 @router.get("/auth/config", response_model=AuthConfigRead)
-def auth_config(db: Session = Depends(get_db)) -> dict:
-    status = provider_status(db)
+def auth_config(request: Request, db: Session = Depends(get_db)) -> dict:
+    status = provider_status(db, public_origin(request))
     return {
         "google_auth_enabled": status["google_auth_enabled"],
         "app_url_origin": status["app_url_origin"],
@@ -225,36 +226,38 @@ def auth_config(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/auth/google/start")
-def google_redirect_start() -> RedirectResponse:
+def google_redirect_start(request: Request) -> RedirectResponse:
     settings = get_settings()
     if not settings.google_client_id or not settings.google_client_secret:
         raise HTTPException(status_code=400, detail="Google OAuth Client ID and Client Secret are required")
     state = new_oauth_state()
-    response = RedirectResponse(build_google_authorization_url(state))
-    response.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=settings.app_url.startswith("https://"), samesite="lax", max_age=600)
+    origin = public_origin(request)
+    response = RedirectResponse(build_google_authorization_url(state, origin))
+    response.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=origin.startswith("https://"), samesite="lax", max_age=600)
     return response
 
 
 @router.get("/auth/google/callback")
 async def google_redirect_callback(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     oauth_state: str | None = Cookie(default=None, alias=OAUTH_STATE_COOKIE),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    settings = get_settings()
+    origin = public_origin(request)
     if not code or not state or state != oauth_state:
-        return RedirectResponse(f"{settings.app_url.rstrip('/')}/?auth_error=oauth_state")
+        return RedirectResponse(f"{origin}/?auth_error=oauth_state")
     try:
-        user = await login_with_google_code(db, code)
+        user = await login_with_google_code(db, code, f"{origin}/api/auth/google/callback")
     except Exception:
-        return RedirectResponse(f"{settings.app_url.rstrip('/')}/?auth_error=oauth_callback")
-    response = RedirectResponse(settings.app_url)
+        return RedirectResponse(f"{origin}/?auth_error=oauth_callback")
+    response = RedirectResponse(origin)
     response.set_cookie(
         SESSION_COOKIE,
         create_session_token(user),
         httponly=True,
-        secure=settings.app_url.startswith("https://"),
+        secure=origin.startswith("https://"),
         samesite="lax",
         max_age=60 * 60 * 24 * 14,
     )
