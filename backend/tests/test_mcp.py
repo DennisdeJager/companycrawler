@@ -129,6 +129,19 @@ async def test_upsert_website_creates_record_without_profile_detection() -> None
 
 
 @pytest.mark.asyncio
+async def test_upsert_website_normalizes_subpage_to_domain_root_for_scans() -> None:
+    db = make_mcp_session()
+
+    result = await mcp.upsert_website(
+        {"url": "https://www.example.com/deep/page?utm_source=mcp", "company_name": "Example BV", "detect_profile": False},
+        principal=ApiPrincipal(kind="api_token", name="execute", scope=ApiTokenScope.execute),
+        db=db,
+    )
+
+    assert result["website"]["url"] == "https://www.example.com/"
+
+
+@pytest.mark.asyncio
 async def test_scan_and_analyze_website_queues_auto_analysis_scan() -> None:
     db = make_mcp_session()
 

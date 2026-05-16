@@ -468,8 +468,7 @@ def _normalize_website_url(raw_url: str | None) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("url must be a valid http(s) URL or domain")
-    path = parsed.path or "/"
-    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), path, "", ""))
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), "/", "", ""))
 
 
 def _website_url_key(url: str) -> str:

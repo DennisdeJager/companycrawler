@@ -48,7 +48,7 @@ De API-route `/api/detect-company-name` probeert deze velden uit de homepage af 
 
 ### upsert_website
 
-- Doel: maakt een nieuw website-record aan of werkt een bestaand record met dezelfde URL bij. Wanneer metadata ontbreekt kan de homepage worden gebruikt om bedrijfsnaam, plaats, regio en logo te detecteren.
+- Doel: maakt een nieuw website-record aan of werkt een bestaand record met dezelfde URL bij. Wanneer metadata ontbreekt kan de homepage worden gebruikt om bedrijfsnaam, plaats, regio en logo te detecteren. De MCP-laag normaliseert ingevoerde subpagina's naar de domein-root, zodat vervolgstappen vanaf het hele domein starten.
 - Inputschema: `{ "url": string, "company_name"?: string, "company_place"?: string, "region"?: string, "logo_url"?: string, "detect_profile"?: boolean }`
 - Outputschema: `{ "created": boolean, "website": { "id": number, "url": string, "company_name": string, "company_place": string, "region": string, "logo_url": string, "created_at": datetime, "updated_at": datetime }, "profile_detection_error"?: string }`
 - Autorisatie: API token met minimaal `execute`.
@@ -64,7 +64,7 @@ De API-route `/api/detect-company-name` probeert deze velden uit de homepage af 
 
 ### scan_and_analyze_website
 
-- Doel: maakt of update een website-record, zet direct een scan in de wachtrij en markeert deze scan zodat de worker na succesvolle afronding automatisch de bedrijfsanalyse start.
+- Doel: maakt of update een website-record, zet direct een scan in de wachtrij en markeert deze scan zodat de worker na succesvolle afronding automatisch de bedrijfsanalyse start. De URL wordt als domein geïnterpreteerd; paden en querystrings worden verwijderd voordat de scan wordt queued.
 - Inputschema: `{ "url": string, "company_name"?: string, "company_place"?: string, "region"?: string, "logo_url"?: string, "detect_profile"?: boolean }`
 - Outputschema: `{ "website": object, "scan": { "id": number, "website_id": number, "status": string, "progress": number, "message": string, "auto_analyze": true, "analysis_run_id": number | null }, "analysis": null, "profile_detection_error"?: string }`
 - Autorisatie: API token met minimaal `execute`.
