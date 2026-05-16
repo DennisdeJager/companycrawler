@@ -144,12 +144,13 @@ def authorize(
         return _redirect_with_error(redirect_uri, "invalid_request", state)
     user = get_session_user(db, session_token)
     if not user:
-        login_url = f"{public_origin(request)}/api/auth/google/start"
+        return_to = f"{request.url.path}?{request.url.query}" if request.url.query else request.url.path
+        login_url = f"{public_origin(request)}/api/auth/google/start?{urlencode({'return_to': return_to})}"
         return HTMLResponse(
             f"""
             <html><body style="font-family: sans-serif; max-width: 640px; margin: 48px auto;">
               <h1>CompanyCrawler autorisatie</h1>
-              <p>Log eerst in bij CompanyCrawler met Google en start daarna deze connector-autorisatie opnieuw.</p>
+              <p>Log eerst in bij CompanyCrawler met Google. Daarna wordt deze connector-autorisatie automatisch hervat.</p>
               <p><a href="{login_url}">Inloggen bij CompanyCrawler</a></p>
             </body></html>
             """,

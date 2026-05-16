@@ -16,7 +16,7 @@ from app.core.database import Base, get_db
 from app.core.config import reload_settings
 from app.models import User
 from app.models.entities import UserRole
-from app.services.auth import SESSION_COOKIE, create_session_token
+from app.services.auth import GOOGLE_LOGIN_RETURN_COOKIE, SESSION_COOKIE, create_session_token
 
 
 def _client() -> tuple[TestClient, Session]:
@@ -101,10 +101,12 @@ def test_oauth_authorize_login_link_uses_forwarded_https_origin() -> None:
 
     assert authorization.status_code == 401
     assert "https://companycrawler.smawa.nl/api/auth/google/start" in authorization.text
+    assert "return_to=%2Foauth%2Fauthorize%3F" in authorization.text
+    assert "automatisch hervat" in authorization.text
     assert "http://localhost:8080/api/auth/google/start" not in authorization.text
 
 
-def test_google_redirect_start_uses_configured_client_and_forwarded_origin(monkeypatch) -> None:
+def test_google_redirect_start_uses_configured_client_forwarded_origin_and_return_cookie(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client-id")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-client-secret")
     reload_settings()
@@ -113,6 +115,7 @@ def test_google_redirect_start_uses_configured_client_and_forwarded_origin(monke
     try:
         response = client.get(
             "/api/auth/google/start",
+            params={"return_to": "/oauth/authorize?client_id=client&redirect_uri=https%3A%2F%2Fchatgpt.com%2Fconnector%2Foauth"},
             headers={"host": "companycrawler.smawa.nl", "x-forwarded-proto": "https", "x-forwarded-host": "companycrawler.smawa.nl"},
             follow_redirects=False,
         )
@@ -124,6 +127,7 @@ def test_google_redirect_start_uses_configured_client_and_forwarded_origin(monke
     assert response.status_code == 307
     assert params["client_id"] == ["google-client-id"]
     assert params["redirect_uri"] == ["https://companycrawler.smawa.nl/api/auth/google/callback"]
+    assert GOOGLE_LOGIN_RETURN_COOKIE in response.cookies
 
 
 def test_dynamic_registration_authorize_and_token_exchange_enable_mcp_access() -> None:

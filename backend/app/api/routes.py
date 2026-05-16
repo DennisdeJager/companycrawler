@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request
@@ -41,6 +42,7 @@ from app.services.ai import AIService
 from app.services.analysis import AnalysisService, seed_default_analysis_prompts, serialize_analysis_run
 from app.services.app_logging import log_event
 from app.services.auth import (
+    GOOGLE_LOGIN_RETURN_COOKIE,
     OAUTH_STATE_COOKIE,
     SESSION_COOKIE,
     build_google_authorization_url,
@@ -61,6 +63,26 @@ from app.services.search import semantic_search
 from app.services.settings_store import SECRET_KEYS, get_setting, provider_status, set_setting
 
 router = APIRouter(prefix="/api")
+
+
+def _safe_return_to(return_to: str | None) -> str:
+    if not return_to or not return_to.startswith("/") or return_to.startswith("//"):
+        return ""
+    return return_to if return_to.startswith("/oauth/authorize?") else ""
+
+
+def _encode_return_to(return_to: str) -> str:
+    return base64.urlsafe_b64encode(return_to.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _decode_return_to(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)).decode("utf-8")
+    except Exception:
+        return ""
+    return _safe_return_to(decoded)
 
 
 def _bytes_to_mb(size: int | float | None) -> float:
@@ -226,7 +248,7 @@ def auth_config(request: Request, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/auth/google/start")
-def google_redirect_start(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+def google_redirect_start(request: Request, return_to: str | None = None, db: Session = Depends(get_db)) -> RedirectResponse:
     settings = get_settings()
     google_client_id = get_setting(db, "google_client_id", settings.google_client_id)
     google_client_secret = get_setting(db, "google_client_secret", settings.google_client_secret)
@@ -236,6 +258,9 @@ def google_redirect_start(request: Request, db: Session = Depends(get_db)) -> Re
     origin = public_origin(request)
     response = RedirectResponse(build_google_authorization_url(state, origin, google_client_id))
     response.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=origin.startswith("https://"), samesite="lax", max_age=600)
+    safe_return_to = _safe_return_to(return_to)
+    if safe_return_to:
+        response.set_cookie(GOOGLE_LOGIN_RETURN_COOKIE, _encode_return_to(safe_return_to), httponly=True, secure=origin.startswith("https://"), samesite="lax", max_age=600)
     return response
 
 
@@ -245,6 +270,7 @@ async def google_redirect_callback(
     code: str | None = None,
     state: str | None = None,
     oauth_state: str | None = Cookie(default=None, alias=OAUTH_STATE_COOKIE),
+    google_return_to: str | None = Cookie(default=None, alias=GOOGLE_LOGIN_RETURN_COOKIE),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     origin = public_origin(request)
@@ -254,7 +280,8 @@ async def google_redirect_callback(
         user = await login_with_google_code(db, code, f"{origin}/api/auth/google/callback")
     except Exception:
         return RedirectResponse(f"{origin}/?auth_error=oauth_callback")
-    response = RedirectResponse(origin)
+    return_to = _decode_return_to(google_return_to)
+    response = RedirectResponse(f"{origin}{return_to}" if return_to else origin)
     response.set_cookie(
         SESSION_COOKIE,
         create_session_token(user),
@@ -264,6 +291,7 @@ async def google_redirect_callback(
         max_age=60 * 60 * 24 * 14,
     )
     response.delete_cookie(OAUTH_STATE_COOKIE)
+    response.delete_cookie(GOOGLE_LOGIN_RETURN_COOKIE)
     return response
 
 

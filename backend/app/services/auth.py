@@ -22,6 +22,7 @@ from app.services.settings_store import get_setting
 
 SESSION_COOKIE = "companycrawler_session"
 OAUTH_STATE_COOKIE = "companycrawler_oauth_state"
+GOOGLE_LOGIN_RETURN_COOKIE = "companycrawler_google_return_to"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
 API_TOKEN_PREFIX = "cc"
 
