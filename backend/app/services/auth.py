@@ -60,10 +60,10 @@ def google_redirect_uri(base_url: str | None = None) -> str:
     return f"{origin}/api/auth/google/callback"
 
 
-def build_google_authorization_url(state: str, base_url: str | None = None) -> str:
+def build_google_authorization_url(state: str, base_url: str | None = None, client_id: str | None = None) -> str:
     settings = get_settings()
     params = {
-        "client_id": settings.google_client_id,
+        "client_id": client_id or settings.google_client_id,
         "redirect_uri": google_redirect_uri(base_url),
         "response_type": "code",
         "scope": "openid email profile",
@@ -117,7 +117,9 @@ def login_with_google(db: Session, credential: str) -> User:
 
 async def login_with_google_code(db: Session, code: str, redirect_uri: str | None = None) -> User:
     settings = get_settings()
-    if not settings.google_client_id or not settings.google_client_secret:
+    google_client_id = get_setting(db, "google_client_id", settings.google_client_id)
+    google_client_secret = get_setting(db, "google_client_secret", settings.google_client_secret)
+    if not google_client_id or not google_client_secret:
         raise ValueError("Google OAuth Client ID and Client Secret are required")
 
     async with httpx.AsyncClient(timeout=20) as client:
@@ -125,15 +127,15 @@ async def login_with_google_code(db: Session, code: str, redirect_uri: str | Non
             "https://oauth2.googleapis.com/token",
             data={
                 "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
+                "client_id": google_client_id,
+                "client_secret": google_client_secret,
                 "redirect_uri": redirect_uri or google_redirect_uri(),
                 "grant_type": "authorization_code",
             },
         )
     response.raise_for_status()
     token_payload = response.json()
-    payload = id_token.verify_oauth2_token(token_payload["id_token"], requests.Request(), settings.google_client_id)
+    payload = id_token.verify_oauth2_token(token_payload["id_token"], requests.Request(), google_client_id)
     return _upsert_google_user(db, payload["email"], payload.get("name", payload["email"]), payload["sub"], True)
 
 

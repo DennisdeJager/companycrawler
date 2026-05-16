@@ -58,7 +58,7 @@ from app.services.auth import (
 )
 from app.services.crawler import CompanyCrawler
 from app.services.search import semantic_search
-from app.services.settings_store import SECRET_KEYS, provider_status, set_setting
+from app.services.settings_store import SECRET_KEYS, get_setting, provider_status, set_setting
 
 router = APIRouter(prefix="/api")
 
@@ -226,13 +226,15 @@ def auth_config(request: Request, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/auth/google/start")
-def google_redirect_start(request: Request) -> RedirectResponse:
+def google_redirect_start(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
     settings = get_settings()
-    if not settings.google_client_id or not settings.google_client_secret:
+    google_client_id = get_setting(db, "google_client_id", settings.google_client_id)
+    google_client_secret = get_setting(db, "google_client_secret", settings.google_client_secret)
+    if not google_client_id or not google_client_secret:
         raise HTTPException(status_code=400, detail="Google OAuth Client ID and Client Secret are required")
     state = new_oauth_state()
     origin = public_origin(request)
-    response = RedirectResponse(build_google_authorization_url(state, origin))
+    response = RedirectResponse(build_google_authorization_url(state, origin, google_client_id))
     response.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=origin.startswith("https://"), samesite="lax", max_age=600)
     return response
 

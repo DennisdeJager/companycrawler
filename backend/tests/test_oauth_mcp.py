@@ -9,9 +9,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+from app.api.routes import router as api_router
 from app.api.mcp import router as mcp_router
 from app.api.oauth import router as oauth_router
 from app.core.database import Base, get_db
+from app.core.config import reload_settings
 from app.models import User
 from app.models.entities import UserRole
 from app.services.auth import SESSION_COOKIE, create_session_token
@@ -27,6 +29,7 @@ def _client() -> tuple[TestClient, Session]:
         yield db
 
     app.dependency_overrides[get_db] = override_db
+    app.include_router(api_router)
     app.include_router(oauth_router)
     app.include_router(mcp_router)
     return TestClient(app), db
@@ -99,6 +102,28 @@ def test_oauth_authorize_login_link_uses_forwarded_https_origin() -> None:
     assert authorization.status_code == 401
     assert "https://companycrawler.smawa.nl/api/auth/google/start" in authorization.text
     assert "http://localhost:8080/api/auth/google/start" not in authorization.text
+
+
+def test_google_redirect_start_uses_configured_client_and_forwarded_origin(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client-id")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-client-secret")
+    reload_settings()
+    client, _ = _client()
+
+    try:
+        response = client.get(
+            "/api/auth/google/start",
+            headers={"host": "companycrawler.smawa.nl", "x-forwarded-proto": "https", "x-forwarded-host": "companycrawler.smawa.nl"},
+            follow_redirects=False,
+        )
+    finally:
+        reload_settings()
+
+    parsed = urlparse(response.headers["location"])
+    params = parse_qs(parsed.query)
+    assert response.status_code == 307
+    assert params["client_id"] == ["google-client-id"]
+    assert params["redirect_uri"] == ["https://companycrawler.smawa.nl/api/auth/google/callback"]
 
 
 def test_dynamic_registration_authorize_and_token_exchange_enable_mcp_access() -> None:

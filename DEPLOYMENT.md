@@ -60,7 +60,8 @@ Voor dev/public login:
 - Authorized redirect URIs: `https://companycrawler.smawa.nl/api/auth/google/callback`
 - Authorized domains: `smawa.nl`
 - Authorized JavaScript origins: niet nodig
-- `.env`: `GOOGLE_CLIENT_ID` en `GOOGLE_CLIENT_SECRET` moeten ingevuld zijn
+- Server-side `.env`: `GOOGLE_CLIENT_ID` en `GOOGLE_CLIENT_SECRET` moeten ingevuld zijn in de actieve deploymap `capps/apps/companycrawler/.env`. Lokale `.env` wordt bewust niet meegekopieerd door de deploy workflow.
+- Bij deploy probeert de workflow een bestaande legacy `.env` uit `/opt/capps/apps/companycrawler/.env` eenmalig over te nemen wanneer de actieve deploymap nog geen `.env` heeft.
 
 De Settings pagina toont de actieve browser-origin, `APP_URL` origin en redirect URI uit `.env`, zodat zichtbaar is welke redirect URI in Google Cloud geregistreerd moet zijn.
 
